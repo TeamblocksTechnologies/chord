@@ -24,22 +24,22 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "@teamblocks.dev/chord-recorder-protocol": "workspace:*",
-    "@types/node": "^24.19.2",
+    "@types/node": "^26.6.5",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "electron": "^44.10.0",
+    "electron": "^45.0.0",
     "electron-vite": "^6.0.0",
     "gifenc": "1.0.3",
-    "mediabunny": "^1.62.0",
-    "svelte": "^5.57.2",
+    "mediabunny": "^1.62.1",
+    "svelte": "^5.57.3",
     "svelte-check": "^4.7.7",
     "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.3",
-    "vite": "^8.3.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
     "@teamblocks.dev/chord-ui": "workspace:*"
   },
   "dependencies": {
     "electron-updater": "^6.8.11",
-    "onnxruntime-node": "1.30.0"
+    "onnxruntime-node": "1.31.1"
   },
   "imports": {
     "#features/audio-processing/contracts/api": "./src/features/audio-processing/contracts/api.ts",
