@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  # macOS/CPU binaries ship in the package; no optional CUDA download is needed.
+  onnxruntime-node: false
+# Keep a single-document lockfile until GitHub supports pnpm's env document.
+# scripts/check-package-manager.mjs enforces the package.json version during installs.
+pmOnFail: ignore

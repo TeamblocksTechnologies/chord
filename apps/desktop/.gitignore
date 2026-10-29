@@ -1,0 +1,5 @@
+out/
+.svelte-check/
+
+# Integration-test fixtures; they sit in the source tree so Vite can resolve workspace dependencies.
+tests/integration/.*/

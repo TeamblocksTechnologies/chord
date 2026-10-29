@@ -1,0 +1,72 @@
+name: Bug report
+description: Something in Chord doesn't work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem.
+        For security vulnerabilities, don't open an issue. Use [private reporting](https://github.com/TeamblocksTechnologies/chord/security/advisories/new) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Record a screen with the microphone on
+        2. Open the recording in the editor
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Chord commit
+      description: The output of `git rev-parse --short HEAD` in your checkout.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: macOS 26.0
+    validations:
+      required: true
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Mac architecture
+      description: Apple Silicon is the only tested architecture.
+      options:
+        - Apple Silicon
+        - Intel
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Recording
+        - Editing
+        - Transcription
+        - Noise reduction
+        - Camera background removal
+        - Exporting
+        - Settings
+        - Building from source
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Set `CHORD_HELPER_LOGS=1` to include the recorder helper's informational lines. Remove anything private, such as file paths or recording content, before posting.
+      render: shell

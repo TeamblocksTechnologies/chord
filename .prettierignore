@@ -1,0 +1,11 @@
+**/node_modules/
+**/.build/
+**/out/
+**/dist/
+**/.svelte-check/
+**/tests/integration/.*/
+artifacts/
+work/
+docs/handoffs/
+pnpm-lock.yaml
+native/macos/Package.resolved
