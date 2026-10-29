@@ -1,0 +1,19 @@
+{
+  "name": "@teamblocks.dev/chord-recorder-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Contract between the Chord desktop app and its platform recorder helpers.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "node --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  }
+}

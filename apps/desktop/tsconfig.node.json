@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node"]
+  },
+  "include": [
+    "electron.vite.config.ts",
+    "src/app/main",
+    "src/app/preload",
+    "src/features/*/main",
+    "src/platform/main",
+    "src/shared/main",
+    "src/media-engine/main"
+  ],
+  "exclude": ["**/*.test.ts", "**/tests/**"]
+}

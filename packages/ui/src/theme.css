@@ -1,0 +1,28 @@
+@theme {
+  --font-sans: "DM Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --color-primary: var(--color-blue-600);
+  --color-primary-hover: var(--color-blue-500);
+
+  /*
+   * Translucent stand-ins for the neutral scale. Over the dark window tint each one reads as its
+   * neutral counterpart, but as white layered on whatever is behind the window it keeps its contrast
+   * when the window sits over a light desktop. Use these for UI chrome; solid neutrals only for
+   * inverted elements (light fills with dark text).
+   */
+  --color-glass-300: rgb(255 255 255 / 82%);
+  --color-glass-400: rgb(255 255 255 / 62%);
+  --color-glass-500: rgb(255 255 255 / 43%);
+  --color-glass-600: rgb(255 255 255 / 29%);
+  --color-glass-700: rgb(255 255 255 / 22%);
+  --color-glass-800: rgb(255 255 255 / 11%);
+  --color-glass-900: rgb(255 255 255 / 5%);
+
+  /*
+   * Floating panels. Over native vibrancy, backdrop blur only adds a soft glow on top of what's behind,
+   * which stays sharp wherever the fill lets it through; a near-opaque fill hides it and leaves the glow.
+   */
+  --color-popover: rgb(23 23 23 / 92%);
+}
+
+/* Include the library source when a consumer compiles Tailwind. */
+@source "./";

@@ -1,0 +1,42 @@
+{
+  "name": "@teamblocks.dev/chord",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@12.4.2",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=12"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @teamblocks.dev/chord-desktop dev",
+    "build": "pnpm --filter @teamblocks.dev/chord-desktop build",
+    "lint": "eslint . --max-warnings 0",
+    "lint:workflows": "actionlint",
+    "format": "pnpm format:web && pnpm format:swift",
+    "format:check": "pnpm format:web:check && pnpm format:swift:check",
+    "format:web": "prettier . --write --ignore-unknown",
+    "format:web:check": "prettier . --check --ignore-unknown",
+    "format:swift": "swift format format --configuration .swift-format --in-place --recursive native/macos/Sources native/macos/Tests native/macos/Package.swift",
+    "format:swift:check": "swift format lint --configuration .swift-format --strict --recursive native/macos/Sources native/macos/Tests native/macos/Package.swift",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:integration": "pnpm --filter @teamblocks.dev/chord-desktop test:integration",
+    "test:integration:noise": "pnpm --filter @teamblocks.dev/chord-desktop test:integration:noise",
+    "screenshots": "pnpm --filter @teamblocks.dev/chord-desktop screenshots",
+    "preinstall": "node scripts/check-package-manager.mjs",
+    "audit:dependencies": "pnpm audit --audit-level moderate",
+    "check:package-manager": "node scripts/check-package-manager.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-svelte": "3.23.1",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "prettier-plugin-svelte": "4.1.1",
+    "svelte": "5.57.2",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
+  }
+}

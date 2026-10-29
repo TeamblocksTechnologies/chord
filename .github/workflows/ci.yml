@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+    inputs:
+      noise_reduction:
+        description: Also run the optional native noise-reduction check (DeepFilterNet3 skips without models)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    name: Code quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - name: Check pinned pnpm and dependency graph compatibility
+        run: pnpm check:package-manager
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check web formatting
+        run: pnpm format:web:check
+      - name: Lint TypeScript and Svelte
+        run: pnpm lint
+      - name: Lint GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Check TypeScript, Svelte, and architecture boundaries
+        run: pnpm typecheck
+      - name: Run portable Node tests
+        run: pnpm test
+
+  macos:
+    name: Native and application
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      RECORDER_CONTRACT_REQUIRED: "1"
+      CHORD_TEST_ARTIFACTS: ${{ github.workspace }}/artifacts/integration
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select the pinned Xcode toolchain
+        run: |
+          XCODE_VERSION="$(cat .xcode-version)"
+          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          xcodebuild -version
+          swift --version
+          swift format --version
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - name: Check pinned pnpm and dependency graph compatibility
+        run: pnpm check:package-manager
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install media test tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            brew install ffmpeg
+          fi
+          ffmpeg -version
+      - name: Check Swift formatting
+        run: pnpm format:swift:check
+      - name: Build release helpers using locked dependencies
+        run: |
+          swift build --package-path native/macos -c release --force-resolved-versions
+          native/macos/scripts/build.sh
+          test -x native/macos/.build/release/recorder-helper
+      - name: Run Swift tests using locked dependencies
+        run: swift test --package-path native/macos --force-resolved-versions
+      - name: Run Node tests including the native helper contract and Apple audio decoding
+        run: pnpm test
+      - name: Build the Electron application
+        run: pnpm build
+      - name: Run fixture integration checks
+        run: pnpm test:integration
+      - name: Run optional noise-reduction integration check
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.noise_reduction }}
+        run: pnpm test:integration:noise
+      - name: Upload integration failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-diagnostics-${{ github.run_attempt }}
+          path: artifacts/integration/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  result:
+    name: CI passed
+    if: ${{ always() }}
+    needs: [quality, macos]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Require every job to succeed
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          MACOS_RESULT: ${{ needs.macos.result }}
+        run: test "$QUALITY_RESULT" = success && test "$MACOS_RESULT" = success

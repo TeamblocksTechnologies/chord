@@ -1,0 +1,37 @@
+{
+  "name": "@teamblocks.dev/chord-ui",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Source-linked Svelte controls and UI utilities shared by Chord applications.",
+  "exports": {
+    "./*": "./src/*.ts",
+    "./*.svelte": "./src/*.svelte",
+    "./contextMenu.svelte": "./src/contextMenu.svelte.ts",
+    "./menus.svelte": "./src/menus.svelte.ts",
+    "./theme.css": "./src/theme.css"
+  },
+  "imports": {
+    "#ui/*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --test src/**/*.test.ts"
+  },
+  "peerDependencies": {
+    "svelte": "^5.57.2"
+  },
+  "dependencies": {
+    "@floating-ui/dom": "^1.8.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/node": "^24.19.2",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.4"
+  }
+}

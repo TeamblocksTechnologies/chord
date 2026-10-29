@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "allowJs": true
+  },
+  "include": [
+    "scripts/**/*.test.ts",
+    "tests/integration/**/*.ts",
+    "src/features/*/tests/integration/**/*.ts"
+  ]
+}

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>dev.teamblocks.chord.recorder-helper</string>
+    <key>CFBundleName</key>
+    <string>recorder-helper</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Chord records audio from your microphone.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Chord records video from your camera.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Chord records system audio.</string>
+</dict>
+</plist>

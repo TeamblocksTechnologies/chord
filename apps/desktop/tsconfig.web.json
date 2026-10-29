@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["vite/client", "svelte"]
+  },
+  "include": [
+    "src/app/renderer",
+    "src/features/*/renderer",
+    "src/platform/renderer",
+    "src/project-document/renderer",
+    "src/media-engine/renderer",
+    "src/shared/renderer"
+  ],
+  "exclude": ["**/*.test.ts", "**/tests/**"]
+}
