@@ -1,10 +1,17 @@
 // Run after building: env -u ELECTRON_RUN_AS_NODE pnpm exec electron src/features/recording/tests/integration/screen-preview.ts
 import { app, BrowserWindow, nativeImage } from "electron";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate,
+  screenshot,
+  settle,
+  until,
+} from "../../../../../tests/support/integration.ts";
 
 const data = mkdtempSync(join(tmpdir(), "chord-screen-preview-"));
 app.setPath("userData", data);
@@ -80,16 +87,6 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
   { mode: 0o755 },
 );
 process.env.CHORD_RECORDER_HELPER = fixture;
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message: string) {
-  for (let i = 0; i < 160; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = (win: BrowserWindow, expression: string) =>
-  win.webContents.executeJavaScript(expression);
 const surface = (kind: string) =>
   BrowserWindow.getAllWindows().find(
     (w) => new URL(w.webContents.getURL() || "about:blank").searchParams.get("surface") === kind,
@@ -102,9 +99,9 @@ const requests = () =>
     .filter((r) => r.method === "setScreenPreview");
 const previews = () => requests().at(-1)?.params.previews ?? [];
 const open = async (win: BrowserWindow) => {
-  await evaluate(
+  await click(
     win,
-    `document.querySelector('[data-source-toggle="screen"] + [data-popup-trigger]').click()`,
+    `document.querySelector('[data-source-toggle="screen"] + [data-popup-trigger]')`,
   );
   await until(() => evaluate(win, '!!document.querySelector("[role=menu]")'), "screen menu");
 };
@@ -222,17 +219,11 @@ app.whenReady().then(async () => {
       ),
       "true",
     );
-    if (process.env.CHORD_TEST_SCREENSHOTS) {
-      mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-      writeFileSync(
-        join(process.env.CHORD_TEST_SCREENSHOTS, "screen-preview.png"),
-        (await main.webContents.capturePage()).toPNG(),
-      );
-    }
+    await screenshot(main, "screen-preview");
 
     // Stale frames cannot paint a replacement preview.
     main.webContents.send("preview:frame", oldId.split("/").at(-1), opaque);
-    await pause(100);
+    await settle();
     assert.equal((await pixels(main))[7], 0);
 
     // Multiple displays and area outlines use the same filters, retaining the display's actual aspect ratio.

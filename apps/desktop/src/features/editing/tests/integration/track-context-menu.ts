@@ -6,6 +6,12 @@ import { copyFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "nod
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate as evaluateIn,
+  reload,
+  until,
+} from "../../../../../tests/support/integration.ts";
 
 // Electron's default uncaught-error dialog blocks unattended test runs.
 process.on("uncaughtException", (error) => {
@@ -116,27 +122,6 @@ writeFileSync(
   JSON.stringify({ type: "move", time: 0, x: 100, y: 100 }) + "\n",
 );
 
-async function until(check: () => unknown | Promise<unknown>, message: string) {
-  for (let i = 0; i < 200; i++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  for (const window of BrowserWindow.getAllWindows()) {
-    console.error(
-      "Menu timeout diagnostics",
-      await window.webContents
-        .executeJavaScript(
-          `JSON.stringify({
-      focused: document.hasFocus(), hidden: document.hidden,
-      menus: [...document.querySelectorAll('[role=menu]')].map(m => ({html: m.outerHTML, inert: m.inert, animations: m.getAnimations().map(a => ({state:a.playState,time:a.currentTime}))}))
-    })`,
-        )
-        .catch(() => "window unavailable"),
-    );
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-
 // Keep real renderer events and IPC; intercept only Finder and the Trash.
 const revealed: string[] = [];
 shell.showItemInFolder = (path: string) => revealed.push(path);
@@ -158,11 +143,7 @@ app.whenReady().then(async () => {
         )!),
       "main window",
     );
-    const evaluate = (expression: string) =>
-      main.webContents.executeJavaScript(expression).catch((error) => {
-        console.error("Renderer expression failed:", expression);
-        throw error;
-      });
+    const evaluate = (expression: string) => evaluateIn(main, expression);
     await until(() => evaluate('!!document.querySelector("[aria-label=Settings]")'), "home");
     const setup = await evaluate("window.chord.desktop.getState().then(state => state.defaults)");
     const now = new Date().toISOString();
@@ -196,12 +177,12 @@ app.whenReady().then(async () => {
     await evaluate(
       `window.chord.desktop.projects.load().then(() => window.chord.desktop.projects.put([${JSON.stringify(project)}]))`,
     );
-    main.webContents.reload();
+    await reload(main);
     await until(
       () => evaluate(`!!document.querySelector('[data-projects] > div > button:first-child')`),
       "project card",
     );
-    await evaluate(`document.querySelector('[data-projects] > div > button:first-child').click()`);
+    await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
     await until(
       () =>
         evaluate(
@@ -268,7 +249,7 @@ app.whenReady().then(async () => {
       assert.equal(revealed.at(-1), expected);
     };
     const revealInspector = async (expected: string) => {
-      await evaluate(`document.querySelector('[data-inspector] [aria-haspopup=menu]').click()`);
+      await click(main, `document.querySelector('[data-inspector] [aria-haspopup=menu]')`);
       await until(
         () =>
           evaluate(
@@ -277,8 +258,9 @@ app.whenReady().then(async () => {
         "inspector actions",
       );
       const count = revealed.length;
-      await evaluate(
-        `Array.from(document.querySelectorAll('[role=menuitem]')).find(item => item.textContent === 'Show in folder').click()`,
+      await click(
+        main,
+        `Array.from(document.querySelectorAll('[role=menuitem]')).find(item => item.textContent === 'Show in folder')`,
       );
       await until(() => revealed.length > count, "inspector reveal");
       assert.equal(revealed.at(-1), expected);
@@ -334,8 +316,9 @@ app.whenReady().then(async () => {
         () => evaluate(`!!document.querySelector('dialog[open] #recording-delete-title')`),
         "recording delete confirmation",
       );
-      await evaluate(
-        `Array.from(document.querySelectorAll('dialog button')).find(button => button.textContent.trim() === 'Cancel').click()`,
+      await click(
+        main,
+        `Array.from(document.querySelectorAll('dialog button')).find(button => button.textContent.trim() === 'Cancel')`,
       );
       await until(() => evaluate(`!document.querySelector('dialog[open]')`), "cancelled delete");
     };
@@ -394,7 +377,7 @@ app.whenReady().then(async () => {
     );
     await revealInspector(join(directory, "later.mov"));
 
-    await evaluate(`document.querySelector('[aria-label="Edit recording 1"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
     await until(
       () =>
         evaluate(
@@ -415,7 +398,7 @@ app.whenReady().then(async () => {
       );
       const label = `[data-layer-label="${kind}"][data-layer-index="${index}"]`;
       await revealContext(label, join(directory, file));
-      await evaluate(`document.querySelector(${JSON.stringify(label)}).click()`);
+      await click(main, `document.querySelector(${JSON.stringify(label)})`);
       await revealInspector(join(directory, file));
     }
     await revealContext(
@@ -424,7 +407,7 @@ app.whenReady().then(async () => {
     );
     await revealContext("[data-effect=laser] [data-span]", directory);
     await revealContext("[data-effect-label=laser]", directory);
-    await evaluate(`document.querySelector('[data-effect-label=laser]').click()`);
+    await click(main, `document.querySelector('[data-effect-label=laser]')`);
     await revealInspector(directory);
 
     // Dismissal leaves the track intact, and empty space only offers adding tracks.
@@ -451,8 +434,9 @@ app.whenReady().then(async () => {
     await openContext(sidebar);
     await chooseContext("Delete recording");
     await until(() => evaluate(`!!document.querySelector('dialog[open]')`), "final confirmation");
-    await evaluate(
-      `Array.from(document.querySelectorAll('dialog button')).find(button => button.textContent.trim() === 'Delete recording').click()`,
+    await click(
+      main,
+      `Array.from(document.querySelectorAll('dialog button')).find(button => button.textContent.trim() === 'Delete recording')`,
     );
     await until(
       () =>

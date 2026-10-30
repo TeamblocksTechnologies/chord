@@ -6,6 +6,12 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate as evaluateIn,
+  reload,
+  until,
+} from "../../../../../tests/support/integration.ts";
 
 const data = mkdtempSync(join(tmpdir(), "chord-annotation-tracks-"));
 app.setPath("userData", data);
@@ -90,14 +96,6 @@ writeFileSync(
     .join("\n") + "\n",
 );
 
-async function until(check: () => unknown | Promise<unknown>, message: string) {
-  for (let i = 0; i < 200; i++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-
 app.whenReady().then(async () => {
   try {
     await import(
@@ -111,7 +109,7 @@ app.whenReady().then(async () => {
         )!),
       "the main window",
     );
-    const evaluate = (expression: string) => main.webContents.executeJavaScript(expression);
+    const evaluate = (expression: string) => evaluateIn(main, expression);
     await until(() => evaluate('!!document.querySelector("[aria-label=Settings]")'), "home");
     const setup = await evaluate("window.chord.desktop.getState().then(state => state.defaults)");
     const now = new Date().toISOString();
@@ -145,19 +143,17 @@ app.whenReady().then(async () => {
     );
     // Opens a recording on its own, where its effect tracks are edited.
     const reopen = async (number: number) => {
-      main.webContents.reload();
+      await reload(main);
       await until(
         () => evaluate(`!!document.querySelector('[data-projects] > div > button:first-child')`),
         "the project card",
       );
-      await evaluate(
-        `document.querySelector('[data-projects] > div > button:first-child').click()`,
-      );
+      await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
       await until(
         () => evaluate(`!!document.querySelector('[aria-label="Edit recording ${number}"]')`),
         "the recordings list",
       );
-      await evaluate(`document.querySelector('[aria-label="Edit recording ${number}"]').click()`);
+      await click(main, `document.querySelector('[aria-label="Edit recording ${number}"]')`);
       await until(
         () =>
           evaluate(
@@ -192,13 +188,13 @@ app.whenReady().then(async () => {
       "The new take shows only the effect enabled during that recording",
     );
     const addTrack = `[...document.querySelectorAll('[data-track-footer] button')].find(b => b.textContent.trim() === 'Add track')`;
-    await evaluate(`${addTrack}.click()`);
+    await click(main, `${addTrack}`);
     const laserItem = `[...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent.trim() === 'Laser pointer')`;
     await until(
       () => evaluate(`!!${laserItem} && !${laserItem}.disabled`),
       "the laser pointer in Add track",
     );
-    await evaluate(`${laserItem}.click()`);
+    await click(main, `${laserItem}`);
     await until(
       () => evaluate(`document.querySelectorAll('[data-effect=laser]').length === 1`),
       "adding the missing laser layer",

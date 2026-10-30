@@ -6,6 +6,16 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  animationsDone,
+  click,
+  evaluate as evaluateIn,
+  nextFrame,
+  reload,
+  settle,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 
 const data = mkdtempSync(join(tmpdir(), "chord-video-sequence-"));
 app.setPath("userData", data);
@@ -112,14 +122,6 @@ const first = session("first", 6, "microphone");
 const second = session("second", 4, "systemAudio", false);
 const third = session("third", 2);
 
-async function until(check: () => unknown | Promise<unknown>, message: string) {
-  for (let i = 0; i < 200; i++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-
 app.whenReady().then(async () => {
   try {
     await import(
@@ -133,7 +135,7 @@ app.whenReady().then(async () => {
         )!),
       "the main window",
     );
-    const evaluate = (expression: string) => main.webContents.executeJavaScript(expression);
+    const evaluate = (expression: string) => evaluateIn(main, expression);
     await until(() => evaluate('!!document.querySelector("[aria-label=Settings]")'), "home");
     const setup = await evaluate("window.chord.desktop.getState().then(state => state.defaults)");
     const now = new Date().toISOString();
@@ -192,7 +194,7 @@ app.whenReady().then(async () => {
       const r = clip.getBoundingClientRect();
       return { left: r.left, width: r.width, y: Math.round(r.top + r.height / 2), track: track.left };
     })()`);
-    const click = (x: number, y: number, count = 1) => {
+    const clickPoint = (x: number, y: number, count = 1) => {
       main.webContents.sendInputEvent({ type: "mouseMove", x, y });
       main.webContents.sendInputEvent({
         type: "mouseDown",
@@ -207,12 +209,12 @@ app.whenReady().then(async () => {
     await evaluate(
       `window.chord.desktop.projects.load().then(() => window.chord.desktop.projects.put([${JSON.stringify(project)}]))`,
     );
-    main.webContents.reload();
+    await reload(main);
     await until(
       () => evaluate(`!!document.querySelector('[data-projects] > div > button:first-child')`),
       "the project card",
     );
-    await evaluate(`document.querySelector('[data-projects] > div > button:first-child').click()`);
+    await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
     await until(
       () =>
         evaluate(
@@ -263,13 +265,7 @@ app.whenReady().then(async () => {
       true,
       "Recorded audio has visible peaks",
     );
-    if (process.env.CHORD_TEST_SCREENSHOTS) {
-      mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-      writeFileSync(
-        join(process.env.CHORD_TEST_SCREENSHOTS, "video-waveforms.png"),
-        (await main.webContents.capturePage()).toPNG(),
-      );
-    }
+    await screenshot(main, "video-waveforms");
 
     // Pressing a clip selects it before the pointer's up, and cuts nothing.
     main.webContents.sendInputEvent({
@@ -295,7 +291,7 @@ app.whenReady().then(async () => {
       button: "left",
       clickCount: 1,
     });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await settle();
     assert.equal((await saved()).length, 2, "Clicking a clip cuts nothing");
     assert.equal(
       await evaluate(`!!document.querySelector('[data-split], [data-blade]')`),
@@ -304,13 +300,12 @@ app.whenReady().then(async () => {
     );
 
     // Opening the inspector preserves the scale; fit the clips into the narrower viewport before using coordinates.
-    await evaluate(
-      `document.querySelector('[data-sequence] > div').dispatchEvent(new WheelEvent('wheel', { deltaY: 1000, ctrlKey: true, bubbles: true, cancelable: true }))`,
-    );
+    // The inspector opens as the clip is selected, narrowing the viewport, perhaps after a zoom; so zoom out until
+    // both fit.
     await until(
       () =>
         evaluate(
-          `(() => { const clip = document.querySelector('[data-clip="b"]').getBoundingClientRect(); const viewport = document.querySelector('[data-sequence] > div').getBoundingClientRect(); return clip.right <= viewport.right; })()`,
+          `(() => { const clip = document.querySelector('[data-clip="b"]').getBoundingClientRect(); const viewport = document.querySelector('[data-sequence] > div'); if (clip.right <= viewport.getBoundingClientRect().right) return true; viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: 1000, ctrlKey: true, bubbles: true, cancelable: true })); return false; })()`,
         ),
       "both clips in view",
     );
@@ -337,7 +332,7 @@ app.whenReady().then(async () => {
       `(() => { const r = document.querySelector('[aria-label="Track position"]').getBoundingClientRect(); return Math.round(r.top + r.height / 2); })()`,
     );
     const [a2, b2] = await Promise.all([pointIn("a"), pointIn("b")]);
-    click(Math.round(a2.track + (a2.width + 2) / 3), ruler);
+    clickPoint(Math.round(a2.track + (a2.width + 2) / 3), ruler);
     await until(
       () =>
         evaluate(
@@ -417,22 +412,24 @@ app.whenReady().then(async () => {
     pieces = await saved();
     assert.equal(pieces.length, 3, "Moving a clip cuts nothing");
     await until(async () => (await clipIds())[0] === "b", "the moved clip shown first");
-    let settled = "";
-    await until(
-      async () => settled === (settled = JSON.stringify(await pointIn("a"))),
-      "the clips to settle",
-    );
+    // Settled once nothing moves from one drawn frame to the next, however far apart the frames are.
+    await animationsDone(main);
+    await until(async () => {
+      const before = JSON.stringify(await pointIn("a"));
+      await nextFrame(main);
+      return before === JSON.stringify(await pointIn("a"));
+    }, "the clips to settle");
 
     // Double-clicking edits the recording there, without leaving a cut.
     const target = await pointIn("a");
-    click(Math.round(target.left + target.width / 2), target.y, 1);
-    click(Math.round(target.left + target.width / 2), target.y, 2);
+    clickPoint(Math.round(target.left + target.width / 2), target.y, 1);
+    clickPoint(Math.round(target.left + target.width / 2), target.y, 2);
     await until(
       () => evaluate(`!!document.querySelector('[data-back-to-video]')`),
       "the recording on its own",
     );
     assert.equal((await saved()).length, 3, "The double-click leaves no cut");
-    await evaluate(`document.querySelector('[data-back-to-video]').click()`);
+    await click(main, `document.querySelector('[data-back-to-video]')`);
     await until(
       () => evaluate(`document.querySelectorAll('[data-clip]').length === 3`),
       "back to the video",
@@ -489,7 +486,7 @@ app.whenReady().then(async () => {
 
     // Clicking a clip selects it without cutting, and Backspace removes it.
     const pressed = await pointIn(trimmed);
-    click(Math.round(pressed.left + pressed.width / 2), pressed.y);
+    clickPoint(Math.round(pressed.left + pressed.width / 2), pressed.y);
     await until(
       () => evaluate(`!!document.querySelector('[data-clip="${trimmed}"].ring-2')`),
       "the clip selected",
@@ -526,7 +523,7 @@ app.whenReady().then(async () => {
       "the empty track",
     );
     assert.deepEqual(await saved(), []);
-    await evaluate(`document.querySelector('[aria-label="Add recording 2 to the video"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Add recording 2 to the video"]')`);
     await until(async () => (await saved()).length === 1, "the added recording");
     assert.equal((await saved())[0].recordingId, "two");
 
@@ -554,8 +551,9 @@ app.whenReady().then(async () => {
     );
 
     // Recordings without audio keep their plain clip body.
-    await evaluate(
-      `[...document.querySelectorAll('[data-track-footer] button')].find(button => button.textContent.includes('Add recording')).click()`,
+    await click(
+      main,
+      `[...document.querySelectorAll('[data-track-footer] button')].find(button => button.textContent.includes('Add recording'))`,
     );
     await until(
       () =>
@@ -564,8 +562,9 @@ app.whenReady().then(async () => {
         ),
       "the recording menu",
     );
-    await evaluate(
-      `[...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent.includes('Recording 3')).click()`,
+    await click(
+      main,
+      `[...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent.includes('Recording 3'))`,
     );
     await until(
       () => evaluate(`!!document.querySelector('[data-clip][data-recording=three]')`),

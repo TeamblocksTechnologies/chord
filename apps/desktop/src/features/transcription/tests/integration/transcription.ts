@@ -14,6 +14,14 @@ import {
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate,
+  nextFrame,
+  reload,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 const data = mkdtempSync(join(tmpdir(), "chord-transcription-ui-"));
 app.setPath("userData", data);
 protocol.registerSchemesAsPrivileged([
@@ -122,19 +130,6 @@ writeFileSync(
 );
 const automatic = join(data, "recordings", "Automatic", "auto");
 cpSync(session, automatic, { recursive: true });
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state") {
-  for (let i = 0; i < 600; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = (win: BrowserWindow, expression: string) =>
-  win.webContents.executeJavaScript(expression).catch((error) => {
-    console.error("Renderer evaluation failed:", expression);
-    throw error;
-  });
 async function dragWords(win: BrowserWindow, first: number, last: number, backwards = false) {
   const points = await evaluate(
     win,
@@ -147,7 +142,7 @@ async function dragWords(win: BrowserWindow, first: number, last: number, backwa
   );
   win.focus();
   win.webContents.focus();
-  await pause(100);
+  await until(() => win.isFocused(), "the window to take focus");
   win.webContents.sendInputEvent({
     type: "mouseDown",
     ...points.from,
@@ -162,10 +157,9 @@ async function dragWords(win: BrowserWindow, first: number, last: number, backwa
       button: "left",
       modifiers: ["leftbuttondown"],
     });
-    await pause(15);
+    await nextFrame(win);
   }
   win.webContents.sendInputEvent({ type: "mouseUp", ...points.to, button: "left", clickCount: 1 });
-  await pause(100);
 }
 function key(
   win: BrowserWindow,
@@ -177,15 +171,6 @@ function key(
 }
 const calls = () =>
   existsSync(modelLog) ? readFileSync(modelLog, "utf8").trim().split("\n").length : 0;
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  await pause(200);
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
-}
 app.whenReady().then(async () => {
   let main!: BrowserWindow;
   try {
@@ -259,32 +244,27 @@ app.whenReady().then(async () => {
       main,
       `${desktop}.projects.put([${JSON.stringify(project("manual", session))}])`,
     );
-    await pause(300);
-    assert.equal(calls(), 2, "Auto-transcription off does not run the local model");
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(
         main,
         `[...document.querySelectorAll('[data-projects] > div > button:first-child')].some(b=>b.textContent.includes('Captions'))`,
       ),
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Captions')).click()`,
+      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Captions'))`,
     );
-    await until(() =>
-      evaluate(main, `!!document.querySelector('[aria-label="Edit recording 1"]')`),
-    );
-    await evaluate(main, `document.querySelector('[aria-label="Edit recording 1"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
     const transcriptButton = (text: string) =>
       `[...document.querySelectorAll('[aria-label="Transcript"] button')].find(b=>b.textContent.trim()===${JSON.stringify(text)})`;
-    await until(() =>
-      evaluate(
-        main,
-        `!!${transcriptButton("Transcribe")} && !${transcriptButton("Transcribe")}.disabled`,
-      ),
+    // The library only starts automatic transcription as it saves a project, and it was off by then.
+    await until(
+      () => evaluate(main, `!!${transcriptButton("Transcribe")}`),
+      "the transcribe button",
     );
-    await evaluate(main, `${transcriptButton("Transcribe")}.click()`);
+    assert.equal(calls(), 2, "Auto-transcription off does not run the local model");
+    await click(main, transcriptButton("Transcribe"));
     await until(
       () =>
         evaluate(
@@ -311,7 +291,7 @@ app.whenReady().then(async () => {
         ),
       "select words to correct",
     );
-    await evaluate(main, `${transcriptButton("Edit")}.click()`);
+    await click(main, `${transcriptButton("Edit")}`);
     await until(
       () =>
         evaluate(
@@ -374,9 +354,9 @@ app.whenReady().then(async () => {
       () => evaluate(main, `document.querySelectorAll('[data-transcript-word]').length===5`),
       "corrected words shown",
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[data-transcript-word]')].find(b=>b.textContent==='API').click()`,
+      `[...document.querySelectorAll('[data-transcript-word]')].find(b=>b.textContent==='API')`,
     );
     await until(
       () =>
@@ -386,7 +366,17 @@ app.whenReady().then(async () => {
         ),
       "adjacent word seek",
     );
-    await pause(100); // Let the media clock replace the requested seek time on subsequent frames.
+    // Let the media clock replace the requested seek time on the frames that follow.
+    await until(
+      () =>
+        evaluate(
+          main,
+          `[...document.querySelectorAll('[data-player] video, [data-player] audio')].every(m => !m.src || !m.seeking)`,
+        ),
+      "the seek to finish",
+    );
+    await nextFrame(main);
+    await nextFrame(main);
     assert.equal(
       await evaluate(
         main,
@@ -395,9 +385,9 @@ app.whenReady().then(async () => {
       "API",
       "Clicked adjacent word remains highlighted after media timestamp rounding",
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[data-transcript-word]')].find(b=>b.textContent==='Later').click()`,
+      `[...document.querySelectorAll('[data-transcript-word]')].find(b=>b.textContent==='Later')`,
     );
     await until(
       () => evaluate(main, `document.querySelector('[aria-label="Playback position"]').value>2.3`),
@@ -410,7 +400,7 @@ app.whenReady().then(async () => {
       ),
       "Later",
     );
-    await evaluate(main, `document.querySelector('[aria-label="Play"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Play"]')`);
     await until(
       () =>
         evaluate(
@@ -419,10 +409,10 @@ app.whenReady().then(async () => {
         ),
       "word marker advances during playback",
     );
-    await evaluate(main, `document.querySelector('[aria-label="Pause"]').click()`);
-    await evaluate(
+    await click(main, `document.querySelector('[aria-label="Pause"]')`);
+    await click(
       main,
-      `[...document.querySelectorAll('[data-transcript-word]')].find(b=>b.textContent==='Corrected').click()`,
+      `[...document.querySelectorAll('[data-transcript-word]')].find(b=>b.textContent==='Corrected')`,
     );
     await until(
       () => evaluate(main, `document.querySelector('[aria-label="Playback position"]').value<0.5`),
@@ -435,7 +425,6 @@ app.whenReady().then(async () => {
       ),
       "Corrected",
     );
-    await pause(300);
     const pixels = () =>
       evaluate(
         main,
@@ -485,7 +474,7 @@ app.whenReady().then(async () => {
       "Video cuts preserve the original transcript",
     );
     await screenshot(main, "transcript-range-cut");
-    await evaluate(main, `${transcriptButton("Undo")}.click()`);
+    await click(main, `${transcriptButton("Undo")}`);
     await until(
       () =>
         evaluate(
@@ -636,12 +625,8 @@ app.whenReady().then(async () => {
       true,
       "Nothing is longer than the default length",
     );
-    await evaluate(main, `${silenceButton("0.5s")}.click()`);
-    await until(
-      () => evaluate(main, `!!${silenceButton("Remove 1 silence")}`),
-      "shorter length finds the silence",
-    );
-    await evaluate(main, `${silenceButton("Remove 1 silence")}.click()`);
+    await click(main, `${silenceButton("0.5s")}`);
+    await click(main, `${silenceButton("Remove 1 silence")}`);
     await until(
       () =>
         evaluate(
@@ -675,7 +660,7 @@ app.whenReady().then(async () => {
       () => evaluate(main, `(async()=>(${duration}===4 && ${silence}.textContent==='0.8s'))()`),
       "silence removal is undoable",
     );
-    await evaluate(main, `${silence}.click()`);
+    await click(main, `${silence}`);
     await until(
       () => evaluate(main, `${silence}.getAttribute('aria-current')==='time'`),
       "clicking a silence seeks into it",
@@ -702,13 +687,12 @@ app.whenReady().then(async () => {
     await until(() => evaluate(main, `(async()=>(${duration}===4))()`), "hand removal is undoable");
     // The captions menu's first item shows and hides them.
     const toggleCaptions = async () => {
-      await evaluate(main, `document.querySelector('[aria-label="Captions"]').click()`);
+      await click(main, `document.querySelector('[aria-label="Captions"]')`);
       const item = `[...document.querySelectorAll('[role=menu] [role^=menuitem]')].find(b => b.textContent.trim() === 'Captions')`;
-      await until(() => evaluate(main, `!!${item}`), "the captions menu");
-      await evaluate(main, `${item}.click()`);
+      await click(main, `${item}`);
       // Choosing an item can leave the menu open; its button closes it.
       if (await evaluate(main, `!!document.querySelector('[role=menu]')`))
-        await evaluate(main, `document.querySelector('[aria-label="Captions"]').click()`);
+        await click(main, `document.querySelector('[aria-label="Captions"]')`);
       await until(
         () => evaluate(main, `!document.querySelector('[role=menu]')`),
         "the captions menu to close",
@@ -730,25 +714,22 @@ app.whenReady().then(async () => {
     const batchProject = project("manual", session);
     batchProject.recordings.push({ ...batchProject.recordings[0], id: "batch", directory: batch });
     await evaluate(main, `${desktop}.projects.put([${JSON.stringify(batchProject)}])`);
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(
         main,
         `[...document.querySelectorAll('[data-projects] > div > button:first-child')].some(b=>b.textContent.includes('Captions'))`,
       ),
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Captions')).click()`,
+      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Captions'))`,
     );
-    await until(() =>
-      evaluate(main, `!!document.querySelector('[aria-label="Edit recording 1"]')`),
-    );
-    await evaluate(main, `document.querySelector('[aria-label="Edit recording 1"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
     await until(() =>
       evaluate(main, `!!document.querySelector('[aria-label="Edit recording 2"]')`),
     );
-    await evaluate(main, `document.querySelector('[aria-label="Recording actions"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Recording actions"]')`);
     const transcribeAll = `[...document.querySelectorAll('[role=menuitem]')].find(b=>b.innerText.includes('Transcribe 1 recording'))`;
     await until(
       () =>
@@ -758,7 +739,7 @@ app.whenReady().then(async () => {
         ),
       "only one recording eligible for bulk transcription",
     );
-    await evaluate(main, `${transcribeAll}.click()`);
+    await click(main, `${transcribeAll}`);
     await until(
       () =>
         evaluate(
@@ -773,7 +754,7 @@ app.whenReady().then(async () => {
         .cues[0].text,
       "Corrected API explanation.",
     );
-    await evaluate(main, `document.querySelector('[aria-label="Edit recording 2"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 2"]')`);
     await until(() =>
       evaluate(
         main,
@@ -800,23 +781,19 @@ app.whenReady().then(async () => {
       pieces: [{ id: "timing-piece", recordingId: "take", start: 1.2, end: 4, offset: 0 }],
     };
     await evaluate(main, `${desktop}.projects.put([${JSON.stringify(timingProject)}])`);
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(
         main,
         `[...document.querySelectorAll('[data-projects] > div > button:first-child')].some(b=>b.textContent.includes('Timing'))`,
       ),
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Timing')).click()`,
+      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Timing'))`,
     );
-    await until(() =>
-      evaluate(main, `!!document.querySelector('[aria-label="Edit recording 1"]')`),
-    );
-    await evaluate(main, `document.querySelector('[aria-label="Edit recording 1"]').click()`);
-    await until(() => evaluate(main, `!!document.querySelector('[data-layer-label=microphone]')`));
-    await evaluate(main, `document.querySelector('[data-layer-label=microphone]').click()`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
+    await click(main, `document.querySelector('[data-layer-label=microphone]')`);
     await until(
       () =>
         evaluate(
@@ -826,7 +803,7 @@ app.whenReady().then(async () => {
       "legacy timing refresh available",
     );
     await screenshot(main, "estimated-word-timing");
-    await evaluate(main, `${transcriptButton("Update timing")}.click()`);
+    await click(main, `${transcriptButton("Update timing")}`);
     await until(
       () =>
         evaluate(
@@ -878,7 +855,7 @@ app.whenReady().then(async () => {
         ),
       "select timed words for a persistent cut",
     );
-    await evaluate(main, `${transcriptButton("Cut")}.click()`);
+    await click(main, `${transcriptButton("Cut")}`);
     await until(
       () =>
         evaluate(
@@ -895,23 +872,19 @@ app.whenReady().then(async () => {
         ),
       "transcript cut persisted",
     );
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(
         main,
         `[...document.querySelectorAll('[data-projects] > div > button:first-child')].some(b=>b.textContent.includes('Timing'))`,
       ),
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Timing')).click()`,
+      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Timing'))`,
     );
-    await until(() =>
-      evaluate(main, `!!document.querySelector('[aria-label="Edit recording 1"]')`),
-    );
-    await evaluate(main, `document.querySelector('[aria-label="Edit recording 1"]').click()`);
-    await until(() => evaluate(main, `!!document.querySelector('[data-layer-label=microphone]')`));
-    await evaluate(main, `document.querySelector('[data-layer-label=microphone]').click()`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
+    await click(main, `document.querySelector('[data-layer-label=microphone]')`);
     await until(
       () =>
         evaluate(
@@ -921,7 +894,7 @@ app.whenReady().then(async () => {
       "cuts remain visible after reopening",
     );
     // The video plays the recording from 1.2s and skips what's cut.
-    await evaluate(main, `document.querySelector('[data-video]').click()`);
+    await click(main, `document.querySelector('[data-video]')`);
     await until(
       () =>
         evaluate(

@@ -6,6 +6,14 @@ import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate,
+  eventually,
+  reload,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 
 const data = mkdtempSync(join(tmpdir(), "chord-clip-layout-test-"));
 app.setPath("userData", data);
@@ -94,14 +102,6 @@ function recording(name: string, count: number) {
   };
 }
 const recordings = [recording("three", 3), recording("two", 2), recording("one", 1)];
-const evaluate = (win: BrowserWindow, code: string) => win.webContents.executeJavaScript(code);
-async function until(check: () => unknown | Promise<unknown>, label: string) {
-  for (let attempt = 0; attempt < 300; attempt++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`Timed out waiting for ${label}`);
-}
 
 app.whenReady().then(async () => {
   try {
@@ -141,12 +141,12 @@ app.whenReady().then(async () => {
       `window.chord.desktop.projects.load().then(() => window.chord.desktop.projects.put([${JSON.stringify(project)}]))`,
     );
     async function openProject() {
-      main.webContents.reload();
+      await reload(main);
       await until(
         () => run('!!document.querySelector("[data-projects] > div > button:first-child")'),
         "project",
       );
-      await run(`document.querySelector('[data-projects] > div > button:first-child').click()`);
+      await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
       await until(
         () =>
           run(
@@ -183,18 +183,13 @@ app.whenReady().then(async () => {
       );
     }
     async function choose(label: string, option: string) {
-      await run(
-        `document.querySelector('[data-inspector] [role=combobox][aria-label=${JSON.stringify(label)}]').click()`,
+      await click(
+        main,
+        `document.querySelector('[data-inspector] [role=combobox][aria-label=${JSON.stringify(label)}]')`,
       );
-      await until(
-        () =>
-          run(
-            `[...document.querySelectorAll('[role=option]')].some(o => o.textContent.trim() === ${JSON.stringify(option)})`,
-          ),
-        option,
-      );
-      await run(
-        `[...document.querySelectorAll('[role=option]')].find(o => o.textContent.trim() === ${JSON.stringify(option)}).click()`,
+      await click(
+        main,
+        `[...document.querySelectorAll('[role=option]')].find(o => o.textContent.trim() === ${JSON.stringify(option)})`,
       );
       await until(() => run(`!document.querySelector('[role=listbox]')`), "selection");
     }
@@ -205,11 +200,14 @@ app.whenReady().then(async () => {
     // Fills a feed's cell from its settings popover.
     async function fill(name: string) {
       const trigger = `document.querySelector('[data-inspector] button[aria-label=${JSON.stringify(`${name} settings`)}]')`;
-      await run(`${trigger}.click()`);
+      await click(main, trigger);
       const option = `[...document.querySelectorAll('[role=dialog][aria-label=${JSON.stringify(`${name} settings`)}] [role=radiogroup] [role=radio]')].find(b => b.textContent.trim() === 'Fill')`;
-      await until(() => run(`!!${option}`), `${name} frame`);
-      await run(`${option}.click()`);
-      await run(`${trigger}.click()`);
+      await click(main, option);
+      await until(
+        () => run(`${option}?.getAttribute('aria-checked') === 'true'`),
+        `${name} to fill`,
+      );
+      await click(main, trigger);
       await until(
         () =>
           run(
@@ -264,21 +262,30 @@ app.whenReady().then(async () => {
       ],
       ["red", "green", "blue"],
     );
-    const first = (await saved())[0].layout;
-    assert.equal(first.preset, "split-stack");
-    assert.equal(first.stack, "start");
-    assert.equal((await saved())[1].layout, undefined, "Only selected occurrence changes");
-    if (process.env.CHORD_TEST_SCREENSHOTS) {
-      mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-      writeFileSync(
-        join(process.env.CHORD_TEST_SCREENSHOTS, "clip-layout-three.png"),
-        (await main.webContents.capturePage()).toPNG(),
-      );
-    }
-    // Each layout is drawn while paused; changing layout must never seek the media.
-    await run(
-      `window.layoutSeeks=[];document.addEventListener('seeking',e=>window.layoutSeeks.push(e.target.src),true)`,
+    // The project is saved a little after the change is drawn.
+    await eventually(async () => {
+      const [first, second] = await saved();
+      assert.equal(first.layout?.preset, "split-stack");
+      assert.equal(first.layout?.stack, "start");
+      assert.equal(second.layout, undefined, "Only selected occurrence changes");
+    }, "the three-feed layout to save");
+    await screenshot(main, "clip-layout-three");
+    // Each layout is drawn while paused; changing layout must never seek the media or load it again. The browser can
+    // shift a paused video's reported time by part of a frame, which the player puts back on its next draw; a seek
+    // back to where it was isn't counted.
+    await until(
+      () =>
+        run(
+          `[...document.querySelectorAll('[data-player] video, [data-player] audio')].filter(m => m.src).every(m => !m.seeking && m.readyState >= 2)`,
+        ),
+      "paused media",
     );
+    await run(`(() => {
+      window.layoutSeeks = [];
+      const settled = new Map([...document.querySelectorAll('[data-player] video, [data-player] audio')].filter(m => m.src).map(m => [m, m.currentTime]));
+      document.addEventListener('seeking', e => settled.has(e.target) && Math.abs(e.target.currentTime - settled.get(e.target)) > 0.01 && window.layoutSeeks.push(e.target.src + ' to ' + e.target.currentTime), true);
+      document.addEventListener('emptied', e => settled.has(e.target) && window.layoutSeeks.push(e.target.src + ' loaded again'), true);
+    })()`);
     for (const [group, option] of [
       ["Clip layout", "Three split"],
       ["Direction", "Rows"],
@@ -309,7 +316,10 @@ app.whenReady().then(async () => {
       ],
       ["blue", "red"],
     );
-    assert.deepEqual((await saved())[0].layout.sources, ["camera-2", "screen-1"]);
+    await eventually(
+      async () => assert.deepEqual((await saved())[0].layout?.sources, ["camera-2", "screen-1"]),
+      "the feed sources to save",
+    );
     await pick("Clip layout", "Centered");
     await slider("Padding", 10);
     await expectColors([[0.5, 0.5]], ["blue"]);

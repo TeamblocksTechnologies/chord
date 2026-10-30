@@ -20,6 +20,14 @@ import {
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate,
+  eventually,
+  reload,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 const data = mkdtempSync(join(tmpdir(), "chord-noise-ui-"));
 app.setPath("userData", data);
 protocol.registerSchemesAsPrivileged([
@@ -266,25 +274,6 @@ function checkCleaned(file: string, label: string) {
   );
 }
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state", tries = 1200) {
-  for (let n = 0; n < tries; n++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = (win: BrowserWindow, expression: string) =>
-  win.webContents.executeJavaScript(expression);
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
-}
-
 app.whenReady().then(async () => {
   try {
     await import(
@@ -370,32 +359,19 @@ app.whenReady().then(async () => {
     );
 
     const open = async (directoryName: number) => {
-      main.webContents.reload();
+      await reload(main);
       await until(() =>
         evaluate(
           main,
           `[...document.querySelectorAll('[data-projects] > div > button:first-child')].some(b=>b.textContent.includes('Noise demo'))`,
         ),
       );
-      await evaluate(
+      await click(
         main,
-        `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Noise demo')).click()`,
+        `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Noise demo'))`,
       );
-      await until(() =>
-        evaluate(
-          main,
-          `!!document.querySelector('[aria-label="Edit recording ${directoryName}"]')`,
-        ),
-      );
-      await evaluate(
-        main,
-        `document.querySelector('[aria-label="Edit recording ${directoryName}"]').click()`,
-      );
-      await until(
-        () => evaluate(main, `!!document.querySelector('[data-layer-label=microphone]')`),
-        "the microphone track",
-      );
-      await evaluate(main, `document.querySelector('[data-layer-label=microphone]').click()`);
+      await click(main, `document.querySelector('[aria-label="Edit recording ${directoryName}"]')`);
+      await click(main, `document.querySelector('[data-layer-label=microphone]')`);
       await until(
         () =>
           evaluate(
@@ -429,7 +405,7 @@ app.whenReady().then(async () => {
     assert.equal(await isOn("Reduce noise in microphone"), false);
     assert.equal(askedForCleaned(), false, "the original plays until noise reduction is on");
     await until(() => askedForOriginal(), "the recorded file to be loaded");
-    await evaluate(main, `${toggle("Reduce noise in microphone")}.click()`);
+    await click(main, `${toggle("Reduce noise in microphone")}`);
     await until(async () => (await track(micOnly))?.phase === "done", "Apple noise reduction");
     const apple = (await track(micOnly)).result;
     assert.equal(apple.engine, "apple");
@@ -465,7 +441,7 @@ app.whenReady().then(async () => {
         Math.abs(gainOriginal - gainCleaned) > 0.01,
       `original ${gainOriginal} and cleaned ${gainCleaned} levels differ`,
     );
-    await evaluate(main, `${toggle("Level microphone")}.click()`);
+    await click(main, `${toggle("Level microphone")}`);
     await until(async () => {
       const audio = (await saved()).recordings.find((r: Recording) => r.id === "mic").audio?.[
         "microphone:0"
@@ -482,7 +458,7 @@ app.whenReady().then(async () => {
     );
 
     console.log("Turning it off plays the original again, and its own gain is measured");
-    await evaluate(main, `${toggle("Reduce noise in microphone")}.click()`);
+    await click(main, `${toggle("Reduce noise in microphone")}`);
     await until(async () => {
       const a = (await saved()).recordings.find((r: Recording) => r.id === "mic").audio?.[
         "microphone:0"
@@ -494,7 +470,7 @@ app.whenReady().then(async () => {
       async () => /mic-a\.m4a$/.test(await leadSource()),
       "the preview to go back to the recorded file",
     );
-    await evaluate(main, `${toggle("Reduce noise in microphone")}.click()`);
+    await click(main, `${toggle("Reduce noise in microphone")}`);
     await until(
       async () =>
         (await saved()).recordings.find((r: Recording) => r.id === "mic").audio?.["microphone:0"]
@@ -505,7 +481,7 @@ app.whenReady().then(async () => {
     console.log("Camera and microphone: the microphone follows the video");
     await open(2);
     const before = Date.now();
-    await evaluate(main, `${toggle("Reduce noise in microphone")}.click()`);
+    await click(main, `${toggle("Reduce noise in microphone")}`);
     await until(
       async () => (await track(withCamera))?.phase === "done",
       "noise reduction for the second recording",
@@ -531,16 +507,16 @@ app.whenReady().then(async () => {
         "a copy keeps the engine that made it when the choice changes",
       );
       await open(1);
-      await evaluate(main, `${toggle("Reduce noise in microphone")}.click()`); // off
+      await click(main, `${toggle("Reduce noise in microphone")}`); // off
       await until(async () => !(await isOn("Reduce noise in microphone")));
-      await evaluate(main, `${toggle("Reduce noise in microphone")}.click()`); // on, with the other engine
+      await click(main, `${toggle("Reduce noise in microphone")}`); // on, with the other engine
       await until(
         async () => {
           const t = await track(micOnly);
           return t?.phase === "done" && t.result.engine === "deepfilternet3";
         },
         "DeepFilterNet3 noise reduction",
-        4800,
+        { timeout: 300_000 },
       );
       const deep = (await track(micOnly)).result;
       checkCleaned(join(micOnly, deep.files["mic-a.m4a"]), "DeepFilterNet3");
@@ -575,16 +551,16 @@ app.whenReady().then(async () => {
       `${api}.projects.put([${JSON.stringify(exportProject("Export on", true))},${JSON.stringify(exportProject("Export off", false))}])`,
     );
     const exportedNoiseFloor = async (name: string) => {
-      main.webContents.reload();
+      await reload(main);
       await until(() =>
         evaluate(
           main,
           `[...document.querySelectorAll('[data-projects] > div > button:first-child')].some(b=>b.textContent.includes(${JSON.stringify(name)}))`,
         ),
       );
-      await evaluate(
+      await click(
         main,
-        `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes(${JSON.stringify(name)})).click()`,
+        `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes(${JSON.stringify(name)}))`,
       );
       // The page has to know the cleaned copy is there, as it does once a person has the project open.
       await until(
@@ -595,20 +571,39 @@ app.whenReady().then(async () => {
           ),
         "the saved copy",
       );
-      await pause(800);
+      // With noise reduction on, the preview plays the cleaned copy once the page knows of it. It's drawn again,
+      // by putting the playhead where it is, until it does.
+      if (name === "Export on") {
+        const version = await evaluate(
+          main,
+          `${api}.noise.get(${JSON.stringify(exportRoot(name))}).then(s=>s.tracks['microphone:0'].result.id)`,
+        );
+        await until(
+          () =>
+            evaluate(
+              main,
+              `(() => {
+              if ([...document.querySelectorAll('[data-player] audio, [data-player] video')].some(m => m.dataset.url?.endsWith(${JSON.stringify(`?clean=${encodeURIComponent(version)}`)}))) return true;
+              const slider = document.querySelector('[aria-label="Playback position"]');
+              slider?.dispatchEvent(new Event('input', { bubbles: true }));
+              return false;
+            })()`,
+            ),
+          "the page to know the cleaned copy",
+        );
+      }
       const button = `[...document.querySelectorAll('header button')].find(b=>b.textContent.trim()==='Export')`;
-      await until(() => evaluate(main, `!!${button} && !${button}.disabled`), "the export button");
-      await evaluate(main, `${button}.click()`);
+      await click(main, `${button}`);
       await until(() =>
         evaluate(main, `!!document.querySelector('dialog [aria-label="Resolution"]')`),
       );
-      await evaluate(
+      await click(
         main,
-        `[...document.querySelectorAll('dialog [aria-label="Resolution"] [role=radio]')].find(b=>b.textContent.trim()==='720p').click()`,
+        `[...document.querySelectorAll('dialog [aria-label="Resolution"] [role=radio]')].find(b=>b.textContent.trim()==='720p')`,
       );
-      await evaluate(
+      await click(
         main,
-        `[...document.querySelectorAll('dialog button')].find(b=>b.textContent.trim()==='Export').click()`,
+        `[...document.querySelectorAll('dialog button')].find(b=>b.textContent.trim()==='Export')`,
       );
       await until(
         () =>
@@ -617,7 +612,7 @@ app.whenReady().then(async () => {
             `document.querySelector('dialog h2')?.textContent.trim()==='Video exported'`,
           ),
         `the export of ${name}`,
-        2400,
+        { timeout: 180_000 },
       );
       const folder = join(data, "recordings", name, "Exports");
       const video = readdirSyncSafe(folder).find((file: string) => file.endsWith(".mp4"));
@@ -683,17 +678,21 @@ app.whenReady().then(async () => {
       `${api}.projects.put([${JSON.stringify(project([recording("mic", micOnly, false), recording("cam", withCamera, true), recording("long", long, true)]))}])`,
     );
     // The page keeps its own copy of the project, so it is loaded again rather than left to write the old one back.
-    main.webContents.reload();
+    await reload(main);
     await until(() => evaluate(main, `!!document.querySelector("[aria-label=Settings]")`));
     await evaluate(main, `${api}.noise.start(${JSON.stringify(long)},'microphone',0)`);
     await until(async () => (await track(long))?.phase === "processing", "the long job to start");
     await evaluate(main, `${api}.noise.cancel(${JSON.stringify(long)},'microphone',0)`);
     await until(async () => (await track(long))?.phase === "idle", "cancelling");
-    await pause(500);
-    assert.equal(
-      existsSync(join(long, "noise")) ? readdirSyncSafe(join(long, "noise")).length : 0,
-      0,
-      "nothing is left of a cancelled job",
+    // The job's files are removed as it stops, a little after it's reported idle.
+    await eventually(
+      () =>
+        assert.equal(
+          existsSync(join(long, "noise")) ? readdirSyncSafe(join(long, "noise")).length : 0,
+          0,
+          "nothing is left of a cancelled job",
+        ),
+      "the cancelled job's files to be removed",
     );
     assert.equal(existsSync(join(long, "noise.json")), false);
 

@@ -17,6 +17,13 @@ import {
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate,
+  reload,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 const data = mkdtempSync(join(tmpdir(), "chord-background-ui-"));
 app.setPath("userData", data);
 protocol.registerSchemesAsPrivileged([
@@ -117,16 +124,6 @@ if(call!==3) setTimeout(()=>process.parentPort.postMessage({done:true}),400);
 });`,
 );
 process.env.CHORD_BACKGROUND_WORKER = worker;
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state") {
-  for (let n = 0; n < 600; n++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = (win: BrowserWindow, expression: string) =>
-  win.webContents.executeJavaScript(expression);
 const calls = () =>
   existsSync(log)
     ? readFileSync(log, "utf8")
@@ -134,14 +131,6 @@ const calls = () =>
         .split("\n")
         .map((line) => JSON.parse(line))
     : [];
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
-}
 app.whenReady().then(async () => {
   try {
     await import(
@@ -203,30 +192,30 @@ app.whenReady().then(async () => {
     assert.equal(calls()[0].files.length, 2, "All camera segments queued together");
     await evaluate(main, `${api}.updatePreferences({autoRemoveBackground:false})`);
     await evaluate(main, `${api}.projects.put([${JSON.stringify(project("manual", session))}])`);
-    await pause(300);
-    assert.equal(calls().length, 1, "Automatic processing off does not invoke the model");
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(
         main,
         `[...document.querySelectorAll('[data-projects] > div > button:first-child')].some(b=>b.textContent.includes('Background demo'))`,
       ),
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Background demo')).click()`,
+      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Background demo'))`,
     );
-    await until(() =>
-      evaluate(main, `!!document.querySelector('[aria-label="Edit recording 1"]')`),
-    );
-    await evaluate(main, `document.querySelector('[aria-label="Edit recording 1"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
     const panelButton = (text: string) =>
       `[...document.querySelectorAll('[aria-label="Camera background"] button')].find(b=>b.textContent.trim()===${JSON.stringify(text)})`;
     const toggle = `document.querySelector('[aria-label="Camera background"] [role=switch][aria-label="Remove camera background"]')`;
-    await until(() =>
-      evaluate(main, `!!${panelButton("Process")} && !${panelButton("Process")}.disabled`),
+    // The library only starts automatic processing as it saves a project, and it was off by then.
+    await until(() => evaluate(main, `!!${panelButton("Process")}`), "the process button");
+    assert.equal(
+      (await evaluate(main, `${api}.background.get(${JSON.stringify(session)})`)).phase,
+      "idle",
+      "Automatic processing off leaves the take unprocessed",
     );
-    await evaluate(main, `${panelButton("Process")}.click()`);
+    assert.equal(calls().length, 1, "Automatic processing off does not invoke the model");
+    await click(main, panelButton("Process"));
     await until(() => evaluate(main, `!!${toggle}`), "manual processing result");
     assert.equal(calls().length, 2);
     const pixel = (x: number, y: number): Promise<number[]> =>
@@ -251,18 +240,11 @@ app.whenReady().then(async () => {
     // Processing again is in the camera inspector's actions menu.
     const action = (text: string) =>
       `[...document.querySelectorAll('[role=menuitem]')].find(b=>b.textContent.trim()===${JSON.stringify(text)})`;
-    await evaluate(
-      main,
-      `document.querySelector('[data-inspector] [aria-label="Camera actions"]').click()`,
-    );
-    await until(
-      () => evaluate(main, `!!${action("Process background again")}`),
-      "the camera actions menu",
-    );
-    await evaluate(main, `${action("Process background again")}.click()`);
+    await click(main, `document.querySelector('[data-inspector] [aria-label="Camera actions"]')`);
+    await click(main, `${action("Process background again")}`);
     await until(() => evaluate(main, `!!${panelButton("Cancel")}`), "reprocessing to start");
     await until(() => calls().length === 3, "reprocessing worker to start");
-    await evaluate(main, `${panelButton("Cancel")}.click()`);
+    await click(main, `${panelButton("Cancel")}`);
     await until(
       () =>
         evaluate(
@@ -279,15 +261,14 @@ app.whenReady().then(async () => {
       originalMasks,
     );
 
-    await until(() => evaluate(main, `!!${toggle}`));
-    await evaluate(main, `${toggle}.click()`);
+    await click(main, `${toggle}`);
     await until(async () => red(await pixel(0.15, 0.5)), "original camera restored");
-    await evaluate(main, `${toggle}.click()`);
+    await click(main, `${toggle}`);
     await until(async () => green(await pixel(0.15, 0.5)), "background enabled again");
     // Change color without re-running the model.
-    await evaluate(
+    await click(
       main,
-      `document.querySelector('[aria-label="Camera background"] [aria-label="Background color"]').click()`,
+      `document.querySelector('[aria-label="Camera background"] [aria-label="Background color"]')`,
     );
     await until(
       () => evaluate(main, `!!document.querySelector('[aria-label="Hex color"]')`),
@@ -318,7 +299,7 @@ app.whenReady().then(async () => {
     );
     const replacement = (text: string) =>
       `[...document.querySelectorAll('[aria-label="Camera background"] [role=radiogroup][aria-label="Background replacement"] [role=radio]')].find(b=>b.textContent.trim()===${JSON.stringify(text)})`;
-    await evaluate(main, `${replacement("Blur")}.click()`);
+    await click(main, `${replacement("Blur")}`);
     await until(() => evaluate(main, `!!document.querySelector('[aria-label="Blur amount"]')`));
     await evaluate(
       main,
@@ -329,7 +310,7 @@ app.whenReady().then(async () => {
       (await pixel(0.5, 0.5)).every((v) => v > 220),
       "Blur keeps foreground sharp",
     );
-    await evaluate(main, `${replacement("Color")}.click()`);
+    await click(main, `${replacement("Color")}`);
     await until(async () => blue(await pixel(0.15, 0.5)), "color restored without reprocessing");
 
     // Bulk processing leaves completed masks and their saved treatment intact.
@@ -339,27 +320,23 @@ app.whenReady().then(async () => {
     const batchProject = project("manual", session);
     batchProject.recordings.push({ ...batchProject.recordings[0], id: "batch", directory: batch });
     await evaluate(main, `${api}.projects.put([${JSON.stringify(batchProject)}])`);
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(
         main,
         `[...document.querySelectorAll('[data-projects] > div > button:first-child')].some(b=>b.textContent.includes('Background demo'))`,
       ),
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Background demo')).click()`,
+      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Background demo'))`,
     );
     await until(() =>
       evaluate(main, `!!document.querySelector('[aria-label="Edit recording 2"]')`),
     );
-    await evaluate(main, `document.querySelector('[aria-label="Recording actions"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Recording actions"]')`);
     const processAll = `[...document.querySelectorAll('[role=menuitem]')].find(b=>b.textContent.trim()==='Remove 1 camera background')`;
-    await until(
-      () => evaluate(main, `!!${processAll} && !${processAll}.disabled`),
-      "only one camera recording eligible for bulk processing",
-    );
-    await evaluate(main, `${processAll}.click()`);
+    await click(main, `${processAll}`);
     await until(
       () =>
         evaluate(main, `${api}.background.get(${JSON.stringify(batch)}).then(s=>s.phase==='done')`),
@@ -376,34 +353,33 @@ app.whenReady().then(async () => {
       { id: "first", recordingId: "take", start: 0.5, end: 2, offset: 1.5 },
     ];
     await evaluate(main, `${api}.projects.put([${JSON.stringify(edited)}])`);
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(
         main,
         `[...document.querySelectorAll('[data-projects] > div > button:first-child')].some(b=>b.textContent.includes('Background demo'))`,
       ),
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Background demo')).click()`,
+      `[...document.querySelectorAll('[data-projects] > div > button:first-child')].find(b=>b.textContent.includes('Background demo'))`,
     );
     await until(
       async () => blue(await pixel(0.15, 0.5)),
       "persisted background after cut, move and reload",
     );
     const exportButton = `[...document.querySelectorAll('header button')].find(b=>b.textContent.trim()==='Export')`;
-    await until(() => evaluate(main, `!!${exportButton} && !${exportButton}.disabled`));
-    await evaluate(main, `${exportButton}.click()`);
+    await click(main, `${exportButton}`);
     await until(() =>
       evaluate(main, `!!document.querySelector('dialog [aria-label="Resolution"]')`),
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('dialog [aria-label="Resolution"] [role=radio]')].find(b=>b.textContent.trim()==='720p').click()`,
+      `[...document.querySelectorAll('dialog [aria-label="Resolution"] [role=radio]')].find(b=>b.textContent.trim()==='720p')`,
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('dialog button')].find(b=>b.textContent.trim()==='Export').click()`,
+      `[...document.querySelectorAll('dialog button')].find(b=>b.textContent.trim()==='Export')`,
     );
     await until(
       () =>

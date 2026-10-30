@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { click, evaluate, reload, until } from "../../../../../tests/support/integration.ts";
 
 const data = mkdtempSync(join(tmpdir(), "chord-playback-layout-test-"));
 app.setPath("userData", data);
@@ -92,15 +93,6 @@ writeFileSync(
   }),
 );
 
-const evaluate = (win: BrowserWindow, code: string) => win.webContents.executeJavaScript(code);
-async function until(check: () => unknown | Promise<unknown>, label: string) {
-  for (let attempt = 0; attempt < 200; attempt++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`Timed out waiting for ${label}`);
-}
-
 app.whenReady().then(async () => {
   try {
     await import(
@@ -124,16 +116,13 @@ app.whenReady().then(async () => {
       pieces:[{id:'clip', recordingId:'take', start:0, end:null, cameraLayout:{position:'top-left', width:0.22}}]
     }]))`,
     );
-    main.webContents.reload();
+    await reload(main);
     await until(
       () =>
         evaluate(main, '!!document.querySelector("[data-projects] > div > button:first-child")'),
       "saved project",
     );
-    await evaluate(
-      main,
-      `document.querySelector('[data-projects] > div > button:first-child').click()`,
-    );
+    await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
     await until(
       () =>
         evaluate(
@@ -182,25 +171,46 @@ app.whenReady().then(async () => {
       field.dispatchEvent(new Event('change', {bubbles:true}));
     })()`,
     );
+    // Both files start with the recording, so each shows the frame at the playhead once it's drawn there.
     await until(
       () =>
         evaluate(
           main,
-          `Array.from(document.querySelectorAll('[data-player] video')).filter(v => v.src).every(v => v.readyState >= 2 && !v.seeking)`,
+          `Array.from(document.querySelectorAll('[data-player] video')).filter(v => v.src).every(v => v.readyState >= 2 && !v.seeking && Math.abs(v.currentTime - 0.75) < 0.02)`,
         ),
-      "paused frames",
+      "paused frames at the playhead",
     );
+    // Pixels are compared by what they show, not exactly: decoded video and canvas readback can differ by a bit from
+    // one draw to the next. That saving the old placement's own size keeps the clip's layout is a unit test of
+    // the layout (clipLayout.test.ts).
     const preview = await evaluate(
       main,
       `(async () => {
       const canvas = document.querySelector('[data-player] canvas');
       const context = canvas.getContext('2d');
-      const signature = (background = false) => {
-        const x = background ? Math.floor(canvas.width * 0.75) : 0;
+      // The camera is solid green, in the top-left corner: its picture's width, along a row through every size.
+      const pictureWidth = () => {
+        const y = Math.floor(canvas.height * 0.1);
+        const row = context.getImageData(0, y, canvas.width, 1).data;
+        const green = x => row[x * 4 + 1] > 90 && row[x * 4] < 60 && row[x * 4 + 2] < 60;
+        let x = 0;
+        while (x < canvas.width * 0.1 && !green(x)) x++;
+        let width = 0;
+        while (x + width < canvas.width && green(x + width)) width++;
+        return width;
+      };
+      // The screen shows a test pattern, so where it's showing the right side of the canvas isn't flat.
+      const screenShown = () => {
+        const x = Math.floor(canvas.width * 0.75);
         const pixels = context.getImageData(x, 0, canvas.width - x, canvas.height).data;
-        let hash = 0;
-        for (let i = 0; i < pixels.length; i++) hash = (hash * 31 + pixels[i]) >>> 0;
-        return hash;
+        let sum = 0, squares = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          const light = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+          sum += light;
+          squares += light * light;
+        }
+        const n = pixels.length / 4;
+        return Math.sqrt(squares / n - (sum / n) ** 2) > 20;
       };
       const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
       const size = width => {
@@ -209,58 +219,81 @@ app.whenReady().then(async () => {
         field.dispatchEvent(new Event('input', { bubbles: true }));
       };
       const at = document.querySelector('[aria-label="Playback position"]').valueAsNumber;
-      // Let late loads and corrective seeks from moving the playhead finish, so only seeks caused by
-      // picture sizing are counted, and only on media that was already loaded and paused.
+      // Only media loaded and paused at the playhead is watched. Picture sizing mustn't move it or load it again.
+      // The browser can shift a paused video's reported time by part of a frame, which the player puts back on
+      // its next draw; a seek back to where it was isn't counted.
       const videos = () => Array.from(document.querySelectorAll('[data-player] video')).filter(v => v.src);
-      const mediaState = () => videos().map(v => v.src + ':' + v.currentTime + ':' + v.seeking + ':' + v.readyState).join('|');
-      for (let quiet = 0, last = '', frames = 0; quiet < 30 && frames < 600; frames++) {
-        await nextFrame();
-        const now = mediaState();
-        quiet = now === last && videos().every(v => !v.seeking && v.readyState >= 2) ? quiet + 1 : 0;
-        last = now;
-      }
-      const settled = new WeakSet(videos());
+      const settled = new Map(videos().map(v => [v, v.currentTime]));
       const seeks = [];
       let stage = 'before the first edit';
-      const onSeek = event => settled.has(event.target) && seeks.push(event.target.src.split('/').pop() + ' during ' + stage + ': at ' + event.target.currentTime + ', playhead ' + at + ', ready ' + event.target.readyState);
+      const describe = (video, what) => video.src.split('/').pop() + ' ' + what + ' during ' + stage + ', playhead ' + at;
+      const onSeek = event => settled.has(event.target) && Math.abs(event.target.currentTime - settled.get(event.target)) > 0.01 &&
+        seeks.push(describe(event.target, 'seeked from ' + settled.get(event.target) + ' to ' + event.target.currentTime));
+      const onLoad = event => settled.has(event.target) && seeks.push(describe(event.target, 'loaded again'));
       document.addEventListener('seeking', onSeek, true);
-      const backgrounds = [], layouts = [];
+      document.addEventListener('emptied', onLoad, true);
+      const hidden = [], widths = {};
       try {
         await nextFrame();
-        await nextFrame();
-        const before = signature(true);
-        const original = signature();
-        // Saving the default layout must preserve the whole composition, including the picture.
-        stage = 'the default layout save';
-        size(22);
-        await nextFrame();
-        await nextFrame();
-        const firstEditUnchanged = signature() === original;
-        for (const width of [12, 40, 18, 30]) {
-          stage = 'size ' + width;
-          size(width);
-          for (let frame = 0; frame < 3; frame++) {
+        let width = pictureWidth();
+        const before = width;
+        // The old placement's own size first, which saves the layout, then sizes either side of it.
+        for (const percent of [22, 12, 40, 18, 30]) {
+          stage = 'size ' + percent;
+          size(percent);
+          // Drawn on a coming frame, and the same on the next; frames come however slow the machine is, so this
+          // only gives up if it never is.
+          for (let frame = 0, last = -1; frame < 600; frame++) {
             await nextFrame();
-            backgrounds.push(signature(true));
+            if (!screenShown()) hidden.push(stage);
+            const now = pictureWidth();
+            if (now === last && (percent === 22 || now !== width)) break;
+            last = now;
           }
-          layouts.push(signature());
+          widths[percent] = width = pictureWidth();
         }
-        return { seeks, watched: videos().length, firstEditUnchanged, stable: backgrounds.every(hash => hash === before), layouts,
+        return { seeks, watched: videos().length, before, widths, hidden,
           paused: !!document.querySelector('[aria-label="Play"]'),
           sameTime: document.querySelector('[aria-label="Playback position"]').valueAsNumber === at };
       } finally {
         document.removeEventListener('seeking', onSeek, true);
+        document.removeEventListener('emptied', onLoad, true);
       }
     })()`,
     );
     assert.ok(preview.watched > 0, "Paused media is loaded while picture sizing is checked");
     assert.deepEqual(preview.seeks, [], "Picture sizing does not seek the paused media");
-    assert.ok(
-      preview.firstEditUnchanged,
-      "Saving the default layout preserves the screen and picture pixels",
+    assert.deepEqual(
+      preview.hidden,
+      [],
+      "The paused screen frame stays visible throughout picture sizing",
     );
-    assert.ok(preview.stable, "The paused screen frame stays visible throughout picture sizing");
-    assert.equal(new Set(preview.layouts).size, 4, "Each picture size redraws the overlay");
+    const { widths } = preview;
+    assert.ok(
+      preview.before > 0,
+      `The picture is drawn before sizing (${JSON.stringify(preview)})`,
+    );
+    assert.ok(
+      Math.abs(widths[22] - preview.before) <= 2,
+      `Saving the old placement's own size keeps the picture (${preview.before} then ${widths[22]})`,
+    );
+    assert.ok(
+      widths[12] < widths[18] &&
+        widths[18] < widths[22] &&
+        widths[22] < widths[30] &&
+        widths[30] < widths[40],
+      `Each picture size redraws the picture at that size (${JSON.stringify(widths)})`,
+    );
+    assert.ok(
+      Math.abs(widths[40] / widths[12] - 40 / 12) < 0.4,
+      `The picture's width follows its size (${JSON.stringify(widths)})`,
+    );
+    const piece = (await evaluate(main, "window.chord.desktop.projects.load()"))[0].pieces[0];
+    assert.equal(
+      piece.layout?.pip.position,
+      "top-left",
+      "The saved layout keeps the old placement",
+    );
     assert.ok(
       preview.paused && preview.sameTime,
       "Picture sizing preserves pause and playback position",

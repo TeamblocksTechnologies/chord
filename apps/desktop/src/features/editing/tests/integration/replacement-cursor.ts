@@ -8,6 +8,12 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync 
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate as evaluateIn,
+  reload,
+  until,
+} from "../../../../../tests/support/integration.ts";
 
 const data = mkdtempSync(join(tmpdir(), "chord-replacement-cursor-"));
 app.setPath("userData", data);
@@ -107,14 +113,6 @@ writeFileSync(
     .join("\n") + "\n",
 );
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message: string, tries = 400) {
-  for (let i = 0; i < tries; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
 const isRed = ([r, g, b]: number[]) => r > 180 && g < 80 && b < 80;
 const isBlue = ([r, g, b]: number[]) => b > 180 && r < 80 && g < 80;
 
@@ -131,7 +129,7 @@ app.whenReady().then(async () => {
         )!),
       "the main window",
     );
-    const evaluate = (expression: string) => main.webContents.executeJavaScript(expression);
+    const evaluate = (expression: string) => evaluateIn(main, expression);
     main.webContents.on("console-message", (event) => {
       if (event.level === "error") console.error("Renderer:", event.message);
     });
@@ -176,12 +174,12 @@ app.whenReady().then(async () => {
         },
       )}]))`,
     );
-    main.webContents.reload();
+    await reload(main);
     await until(
       () => evaluate(`!!document.querySelector('[data-projects] button')`),
       "the project card",
     );
-    await evaluate(`document.querySelector('[data-projects] button').click()`);
+    await click(main, `document.querySelector('[data-projects] button')`);
 
     // Export at the default settings.
     const exportButton = `[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === 'Export')`;
@@ -191,19 +189,18 @@ app.whenReady().then(async () => {
       () => evaluate(`!!${exportButton} && !${exportButton}.disabled`),
       "the project to load for export",
     );
-    await evaluate(`${exportButton}.click()`);
+    await click(main, `${exportButton}`);
     await until(
       () => evaluate(`document.querySelector('dialog')?.open && !!${dialogButton("Export")}`),
       "the export dialog",
     );
-    await evaluate(`${dialogButton("Export")}.click()`);
+    await click(main, `${dialogButton("Export")}`);
     await until(
       () =>
         evaluate(`document.querySelector('dialog h2')?.textContent.trim() === 'Video exported'`),
       "the export to finish",
-      1200,
     );
-    await evaluate(`${dialogButton("Done")}.click()`);
+    await click(main, `${dialogButton("Done")}`);
     const folder = join(data, "recordings", "Cursor", "Exports");
     const mp4 = join(
       folder,
@@ -267,7 +264,7 @@ app.whenReady().then(async () => {
       () => evaluate(`!!document.querySelector('[aria-label="Edit recording 1"]')`),
       "the recording list",
     );
-    await evaluate(`document.querySelector('[aria-label="Edit recording 1"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
     await until(
       () => evaluate(`!!document.querySelector('[data-effect=cursor]')`),
       "the cursor track",
@@ -283,7 +280,6 @@ app.whenReady().then(async () => {
           ),
         `seeking to ${time}`,
       );
-      await pause(150);
     };
     const preview = (dx: number, dy: number) =>
       evaluate(`(() => {
@@ -302,7 +298,7 @@ app.whenReady().then(async () => {
     );
 
     // Its controls, and one cursor per recording.
-    await evaluate(`document.querySelector('[data-effect-label=cursor]').click()`);
+    await click(main, `document.querySelector('[data-effect-label=cursor]')`);
     await until(
       () =>
         evaluate(
