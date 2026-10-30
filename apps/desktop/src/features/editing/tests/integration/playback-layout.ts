@@ -234,7 +234,8 @@ app.whenReady().then(async () => {
       document.addEventListener('emptied', onLoad, true);
       const hidden = [], widths = {};
       try {
-        await nextFrame();
+        // The paused frame is drawn on a coming frame too; this only gives up if it never is.
+        for (let frame = 0; frame < 600 && !(pictureWidth() > 0 && screenShown()); frame++) await nextFrame();
         let width = pictureWidth();
         const before = width;
         // The old placement's own size first, which saves the layout, then sizes either side of it.
@@ -247,7 +248,7 @@ app.whenReady().then(async () => {
             await nextFrame();
             if (!screenShown()) hidden.push(stage);
             const now = pictureWidth();
-            if (now === last && (percent === 22 || now !== width)) break;
+            if (now > 0 && now === last && (percent === 22 || now !== width)) break;
             last = now;
           }
           widths[percent] = width = pictureWidth();
