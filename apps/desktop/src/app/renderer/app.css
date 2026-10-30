@@ -240,7 +240,11 @@ select:not(:disabled):active {
   transition-duration: 0ms;
 }
 
-/* Menu rows react when their control is pressed. */
-div:has(> button[role^="menuitem"]:active) {
+/*
+ * Menu rows react when their control is pressed. A command is its own row, but
+ * a menu item wraps its button, so the menu panel itself is left out.
+ */
+button[role="menuitem"]:active,
+div:not([role="menu"]):has(> button[role^="menuitem"]:active) {
   background-color: var(--color-glass-700);
 }
