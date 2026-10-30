@@ -420,10 +420,11 @@ private struct Harness {
     h.time.advance(5)
     h.mic.fail(diskFull: true)
 
-    // The state flips to stopped before the manifest is written, so wait on the stop reason.
-    #expect(await eventually { await h.session.info.stopReason == .diskFull })
-    let manifest = try ManifestStore.read(from: h.session.directory)
-    #expect(manifest.stopReason == .diskFull)
+    // The session stops on its own, so wait for the stop reason to be saved.
+    #expect(
+        await eventually {
+            (try? ManifestStore.read(from: h.session.directory))?.stopReason == .diskFull
+        })
     #expect(try h.segments("mic-1").map(\.endReason) == [.diskFull])
     #expect(try h.segments("screen").map(\.endReason) == [.stopped])
 }

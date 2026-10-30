@@ -59,11 +59,8 @@ private func levels(in output: [Outgoing]) -> [[TrackLevel]] {
 private let ready = Outgoing.event(.ready(version: Helper.version))
 
 /// Polls `condition` so timing-sensitive tests don't depend on how busy the machine is.
-private func waitUntil(timeout: Duration = .seconds(2), _ condition: () async -> Bool) async {
-    let deadline = ContinuousClock.now + timeout
-    while await !condition(), ContinuousClock.now < deadline {
-        try? await Task.sleep(for: .milliseconds(5))
-    }
+private func waitUntil(_ condition: () async -> Bool) async {
+    _ = await eventually(condition)
 }
 
 @Test func announcesReadyThenAnswersPing() async {
