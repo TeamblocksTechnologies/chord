@@ -20,8 +20,30 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      quality: ${{ steps.areas.outputs.quality }}
+      native: ${{ steps.areas.outputs.native }}
+      app: ${{ steps.areas.outputs.app }}
+      full: ${{ steps.areas.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Pick the jobs this change needs
+        id: areas
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: .github/scripts/changed-areas.sh
+
   quality:
     name: Code quality
+    needs: changes
+    if: ${{ needs.changes.outputs.full == 'true' || needs.changes.outputs.quality == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -50,8 +72,32 @@ jobs:
       - name: Run portable Node tests
         run: pnpm test
 
-  macos:
+  native:
+    name: Native helpers
+    needs: changes
+    if: ${{ needs.changes.outputs.full == 'true' || needs.changes.outputs.native == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select the pinned Xcode toolchain
+        run: |
+          XCODE_VERSION="$(cat .xcode-version)"
+          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          xcodebuild -version
+          swift --version
+          swift format --version
+      - name: Check Swift formatting
+        run: swift format lint --configuration .swift-format --strict --recursive native/macos/Sources native/macos/Tests native/macos/Package.swift
+      - name: Run Swift tests using locked dependencies
+        run: swift test --package-path native/macos --force-resolved-versions
+
+  app:
     name: Native and application
+    needs: changes
+    if: ${{ needs.changes.outputs.full == 'true' || needs.changes.outputs.native == 'true' || needs.changes.outputs.app == 'true' }}
     runs-on: macos-26
     timeout-minutes: 45
     env:
@@ -67,7 +113,56 @@ jobs:
           sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
           xcodebuild -version
           swift --version
-          swift format --version
+      # Pull requests that leave native code alone reuse the helpers main built from the same
+      # sources, a small download that skips the build.
+      - name: Restore release helpers built from the same sources
+        id: helpers
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &helper-paths |
+            native/macos/.build/arm64-apple-macosx/release/*-helper
+            native/macos/.build/arm64-apple-macosx/release/*.bundle
+          key: &helper-key swift-helpers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.xcode-version', 'native/macos/Package.resolved') }}-${{ hashFiles('native/macos/Package.swift', 'native/macos/Sources/**', 'native/macos/Resources/**', 'native/macos/scripts/**') }}
+      - name: Link the restored release helpers
+        if: ${{ steps.helpers.outputs.cache-hit == 'true' }}
+        run: ln -sfn arm64-apple-macosx/release native/macos/.build/release
+      # Otherwise start from main's cached build. FluidAudio is most of the build, so only what
+      # changed recompiles.
+      - name: Restore the release helper build
+        id: native-build
+        if: ${{ steps.helpers.outputs.cache-hit != 'true' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &native-build-paths |
+            native/macos/.build
+            !native/macos/.build/repositories
+          key: &native-build-key swift-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.xcode-version', 'native/macos/Package.resolved') }}-${{ hashFiles('native/macos/Package.swift', 'native/macos/Sources/**', 'native/macos/Resources/**', 'native/macos/scripts/**') }}
+          restore-keys: |
+            swift-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.xcode-version', 'native/macos/Package.resolved') }}-
+            swift-release-${{ runner.os }}-${{ runner.arch }}-
+      - name: Build release helpers using locked dependencies
+        if: ${{ steps.helpers.outputs.cache-hit != 'true' }}
+        run: |
+          swift build --package-path native/macos -c release --force-resolved-versions
+          native/macos/scripts/build.sh
+      # Only main saves, so pull requests can't evict the caches they all start from.
+      - name: Cache the release helper build
+        if: ${{ github.event_name != 'pull_request' && steps.helpers.outputs.cache-hit != 'true' && steps.native-build.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *native-build-paths
+          key: *native-build-key
+      - name: Cache the release helpers
+        if: ${{ github.event_name != 'pull_request' && steps.helpers.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *helper-paths
+          key: *helper-key
+      - name: Check the release helpers
+        run: |
+          for helper in recorder-helper transcriber-helper background-helper audio-helper; do
+            test -x "native/macos/.build/release/$helper"
+          done
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -79,23 +174,32 @@ jobs:
         run: pnpm check:package-manager
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # A pinned static ffmpeg with the same version and encoders as Homebrew's, which takes about
+      # 40 seconds to install. Update the URL and both checksums together.
+      - name: Restore media test tools
+        id: media-tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/media-tools
+          key: media-tools-${{ runner.os }}-${{ runner.arch }}-ffmpeg-1789931890_9.0.2
       - name: Install media test tools
         env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
+          CACHE_HIT: ${{ steps.media-tools.outputs.cache-hit }}
+          FFMPEG_BUILD: https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2
         run: |
-          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
-            brew install ffmpeg
+          if [ "$CACHE_HIT" != true ]; then
+            cd "$RUNNER_TEMP"
+            curl -fsSL --retry 3 -O "$FFMPEG_BUILD/ffmpeg.zip" -O "$FFMPEG_BUILD/ffprobe.zip"
+            shasum -a 256 -c - <<'EOF'
+          c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924  ffmpeg.zip
+          fcbe839537485eaee7a7a8bc5cbc0f90d53617e80943e8a5b2e31cb851197ea6  ffprobe.zip
+          EOF
+            unzip -oq ffmpeg.zip -d ~/media-tools
+            unzip -oq ffprobe.zip -d ~/media-tools
           fi
-          ffmpeg -version
-      - name: Check Swift formatting
-        run: pnpm format:swift:check
-      - name: Build release helpers using locked dependencies
-        run: |
-          swift build --package-path native/macos -c release --force-resolved-versions
-          native/macos/scripts/build.sh
-          test -x native/macos/.build/release/recorder-helper
-      - name: Run Swift tests using locked dependencies
-        run: swift test --package-path native/macos --force-resolved-versions
+          echo "$HOME/media-tools" >>"$GITHUB_PATH"
+          ~/media-tools/ffmpeg -version
+          ~/media-tools/ffprobe -version
       - name: Run Node tests including the native helper contract and Apple audio decoding
         run: pnpm test
       - name: Build the Electron application
@@ -117,13 +221,19 @@ jobs:
   result:
     name: CI passed
     if: ${{ always() }}
-    needs: [quality, macos]
+    needs: [changes, quality, native, app]
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     permissions: {}
     steps:
-      - name: Require every job to succeed
+      # Jobs skipped because the change doesn't touch them pass. Change detection itself must
+      # succeed, otherwise its failure would skip every job and look like a pass.
+      - name: Require every needed job to succeed
         env:
-          QUALITY_RESULT: ${{ needs.quality.result }}
-          MACOS_RESULT: ${{ needs.macos.result }}
-        run: test "$QUALITY_RESULT" = success && test "$MACOS_RESULT" = success
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RESULTS: ${{ needs.quality.result }} ${{ needs.native.result }} ${{ needs.app.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          for result in $RESULTS; do
+            case "$result" in success | skipped) ;; *) exit 1 ;; esac
+          done

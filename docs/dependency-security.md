@@ -10,8 +10,9 @@ supplies the app's runtime, so a production-only audit would miss it.
 
 ## Audit gate
 
-The `Dependency security` workflow audits on pull requests, on pushes to `main`, on a weekly schedule and on demand.
-It fails on moderate, high or critical findings, and on registry errors. Low findings stay visible in its output.
+The `Dependency security` workflow audits on pushes to `main`, on a weekly schedule, on demand and on pull requests
+that change dependency manifests or the lockfile. It fails on moderate, high or critical findings, and on registry
+errors. Low findings stay visible in its output.
 Run `pnpm audit:dependencies` to check locally, or `pnpm audit --json` for full details.
 
 ## Advisories
