@@ -10,21 +10,23 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { SHOTS } from "./shots.mjs";
+import { SHOTS, SOCIAL } from "./shots.mjs";
 
 const desktop = resolve(import.meta.dirname, "../..");
 const root = resolve(desktop, "../..");
 const work = join(root, "artifacts", "screenshots");
 
 const requested = process.argv.slice(2);
-const unknown = requested.filter((id) => !SHOTS.some((shot) => shot.id === id));
+const known = [...SHOTS, SOCIAL].map((shot) => shot.id);
+const unknown = requested.filter((id) => !known.includes(id));
 if (unknown.length) {
-  console.error(
-    `Unknown shots: ${unknown.join(", ")}. Known: ${SHOTS.map((s) => s.id).join(", ")}`,
-  );
+  console.error(`Unknown shots: ${unknown.join(", ")}. Known: ${known.join(", ")}`);
   process.exit(1);
 }
 const shots = requested.length ? SHOTS.filter((shot) => requested.includes(shot.id)) : SHOTS;
+// The social card is composed from the saved source shot, so it follows that shot as well as its own id.
+const social =
+  !requested.length || requested.includes(SOCIAL.id) || shots.some((s) => s.id === SOCIAL.source);
 
 if (process.platform !== "darwin") {
   console.error("Screenshots are captured from the macOS app, so they need macOS.");
@@ -64,15 +66,29 @@ function step(label, command, args, extra = {}) {
   }
 }
 
-step("Rendering scenes", electron, [join(import.meta.dirname, "render-frames.mjs")]);
-step("Building demo recordings", process.execPath, [join(import.meta.dirname, "build-media.mjs")]);
-step("Capturing", electron, [join(import.meta.dirname, "capture.mjs")], {
-  CHORD_SCREENSHOTS: shots.map((shot) => shot.id).join(","),
-});
+if (shots.length) {
+  step("Rendering scenes", electron, [join(import.meta.dirname, "render-frames.mjs")]);
+  step("Building demo recordings", process.execPath, [
+    join(import.meta.dirname, "build-media.mjs"),
+  ]);
+  step("Capturing", electron, [join(import.meta.dirname, "capture.mjs")], {
+    CHORD_SCREENSHOTS: shots.map((shot) => shot.id).join(","),
+  });
+}
 
 for (const shot of shots) {
   const target = join(root, shot.output);
   mkdirSync(dirname(target), { recursive: true });
   copyFileSync(join(work, "shots", `${shot.id}.png`), target);
   console.log(`${shot.output}`);
+}
+
+if (social) {
+  const source = join(root, SHOTS.find((shot) => shot.id === SOCIAL.source).output);
+  step("Composing the social card", electron, [
+    join(import.meta.dirname, "social.mjs"),
+    source,
+    join(root, SOCIAL.output),
+  ]);
+  console.log(SOCIAL.output);
 }

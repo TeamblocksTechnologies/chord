@@ -61,6 +61,11 @@ screenshot, add an entry to `shots.mjs` and a capture step with the same id in `
 It needs macOS, `ffmpeg` and screen recording permission for your terminal. Windows open and take focus while it
 runs, so leave the Mac alone for the minute or two it takes. Working files go to `artifacts/screenshots`.
 
+It also makes the GitHub social preview, `docs/images/social.png` (1280x640), from the saved home screenshot, so it's
+rebuilt whenever `home` is (`pnpm screenshots social` rebuilds just the card). `scripts/screenshots/social.mjs` puts the
+logo and the top of the window on black, keeping the logo and the window's sides inside GitHub's 40pt safe area. Upload it
+under Settings, Social preview in the repository.
+
 ## Configuration
 
 `CHORD_RECORDINGS_FOLDER` overrides where recordings are saved (default `~/Movies/Chord`).

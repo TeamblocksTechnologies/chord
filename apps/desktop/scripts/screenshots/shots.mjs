@@ -29,3 +29,12 @@ export const SHOTS = [
     time: 11.2,
   },
 ];
+
+// Composed from another shot rather than captured: the GitHub social preview, on black with the logo over the top of
+// `source`'s window. Regenerated whenever `source` is, and by `pnpm screenshots social` on its own.
+export const SOCIAL = {
+  id: "social",
+  output: "docs/images/social.png",
+  source: "home",
+  description: "The GitHub social preview card (1280x640), made from the home screen",
+};
