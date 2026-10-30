@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { click, evaluate, eventually, screenshot, until } from "../support/integration.ts";
 const data = mkdtempSync(join(tmpdir(), "chord-settings-test-"));
 app.setPath("userData", data);
 app.on("quit", () =>
@@ -42,24 +43,6 @@ console.log(JSON.stringify({status:'installed',locale:'en-CA',locales:['en-CA','
   { mode: 0o755 },
 );
 process.env.CHORD_TRANSCRIBER_HELPER = speechFixture;
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state") {
-  for (let i = 0; i < 120; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = (win: BrowserWindow, expression: string) =>
-  win.webContents.executeJavaScript(expression);
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
-}
 const rendererErrors: string[] = [];
 app.on("browser-window-created", (_event, win: BrowserWindow) =>
   win.webContents.on("console-message", (event) => {
@@ -90,15 +73,11 @@ app.whenReady().then(async () => {
       .showsSystemUI;
     for (const mode of ["window", "display", "area"] as const) {
       await evaluate(main, `window.chord.desktop.updateDefaults({mode:${JSON.stringify(mode)}})`);
-      await evaluate(
+      await click(
         main,
-        `document.querySelector('[data-source-toggle="screen"] + [data-popup-trigger]').click()`,
+        `document.querySelector('[data-source-toggle="screen"] + [data-popup-trigger]')`,
       );
-      await until(
-        () => evaluate(main, `!!document.querySelector('[aria-label="Hide mouse cursor"]')`),
-        `${mode} cursor control`,
-      );
-      await evaluate(main, `document.querySelector('[aria-label="Hide mouse cursor"]').click()`);
+      await click(main, `document.querySelector('[aria-label="Hide mouse cursor"]')`);
       await until(
         async () =>
           (await evaluate(main, "window.chord.desktop.getState()")).preferences.showsCursor ===
@@ -110,7 +89,7 @@ app.whenReady().then(async () => {
         systemUI,
         "Cursor visibility keeps Mac UI unchanged",
       );
-      await evaluate(main, `document.querySelector('[aria-label="Hide mouse cursor"]').click()`);
+      await click(main, `document.querySelector('[aria-label="Hide mouse cursor"]')`);
       await until(
         async () =>
           (await evaluate(main, "window.chord.desktop.getState()")).preferences.showsCursor ===
@@ -138,7 +117,7 @@ app.whenReady().then(async () => {
       ["General", "Shortcuts", "Recording", "Transcription", "Audio", "Backgrounds", "Privacy"],
     );
     const selectSettings = async (id: string) => {
-      await evaluate(main, `document.querySelector('#settings-tab-${id}').click()`);
+      await click(main, `document.querySelector('#settings-tab-${id}')`);
       await until(
         () => evaluate(main, `!!document.querySelector('#settings-panel-${id}')`),
         `${id} settings`,
@@ -476,13 +455,17 @@ app.whenReady().then(async () => {
       main,
       'document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))',
     );
-    assert.equal(
-      await evaluate(
-        main,
-        '!!document.querySelector("dialog[open]") && document.activeElement.id === "background-color"',
-      ),
-      true,
-      "Escape closes only the picker and restores focus",
+    await eventually(
+      async () =>
+        assert.equal(
+          await evaluate(
+            main,
+            '!!document.querySelector("dialog[open]") && document.activeElement.id === "background-color"',
+          ),
+          true,
+          "Escape closes only the picker and restores focus",
+        ),
+      "the picker to close",
     );
     await selectSettings("privacy");
     assert.equal(

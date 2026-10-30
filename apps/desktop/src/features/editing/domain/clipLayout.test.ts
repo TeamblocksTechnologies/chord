@@ -54,6 +54,25 @@ test("old camera placements seed layouts, and source selection can isolate any o
   ]);
 });
 
+test("saving an old camera placement's own picture size keeps how the clip is drawn", () => {
+  // The stage draws a clip without a saved layout from its old camera placement; the inspector saves that layout,
+  // patched, the first time a control changes.
+  const shown = sources.slice(0, 2);
+  const drawn = defaultClipLayout(shown, { position: "top-left", width: 0.22 });
+  const saved = {
+    ...drawn,
+    sources: layoutSources(drawn, shown),
+    pip: { ...drawn.pip, width: drawn.pip.width },
+  };
+  assert.deepEqual(saved.sources, drawn.sources, "Each feed keeps its cell");
+  for (const [width, height] of [
+    [1920, 1080],
+    [640, 360],
+    [1080, 1920],
+  ] as const)
+    assert.deepEqual(layoutCells(saved, width, height, 2), layoutCells(drawn, width, height, 2));
+});
+
 test("pinned windows stay out of a recording's layout until chosen", () => {
   const pinned = { id: "window-1-screen-1", kind: "screen" as const, window: {} };
   assert.deepEqual(defaultClipLayout([...sources, pinned]).sources, ["screen-1", "cam-1", "cam-2"]);

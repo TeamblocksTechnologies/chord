@@ -7,6 +7,14 @@ import { mkdtempSync, copyFileSync, readdirSync, rmSync, writeFileSync, mkdirSyn
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate,
+  nextFrame,
+  reload,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 const data = mkdtempSync(join(tmpdir(), "chord-playback-test-"));
 app.setPath("userData", data);
 // The app registers this when it starts before Electron is ready; here it's loaded after.
@@ -251,25 +259,6 @@ writeFileSync(
   }),
 );
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state", tries = 200) {
-  for (let i = 0; i < tries; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = (win: BrowserWindow, expression: string) =>
-  win.webContents.executeJavaScript(expression);
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  await pause(200);
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
-}
 const rendererErrors: string[] = [];
 app.on("browser-window-created", (_event, win: BrowserWindow) =>
   win.webContents.on("console-message", (event) => {
@@ -300,7 +289,6 @@ async function clickAt(win: BrowserWindow, selector: string, count = 1) {
       clickCount: i,
     });
   }
-  await pause(150);
 }
 const stored = (win: BrowserWindow) =>
   evaluate(
@@ -322,13 +310,10 @@ async function readContextMenu(main: BrowserWindow) {
   const dismiss = async () => {
     main.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
     main.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
-    for (
-      let i = 0;
-      i < 100 &&
-      (await main.webContents.executeJavaScript(`!!document.querySelector('[role=menu]')`));
-      i++
-    )
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    await until(
+      () => evaluate(main, `!document.querySelector('[role=menu]')`),
+      "the menu to close",
+    );
   };
   const items = entries.filter(([label]) => label !== "separator");
   return {
@@ -371,7 +356,7 @@ app.whenReady().then(async () => {
       pieces:[{id:'clip', recordingId:'take', start:0, end:null, offset:0}, {id:'two', recordingId:'second', start:0, end:null, offset:4}],
     }]))`,
     );
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(main, '!!document.querySelector("[data-projects] > div > button:first-child")'),
     );
@@ -383,10 +368,7 @@ app.whenReady().then(async () => {
       window.Audio = function (...args) { const element = new Audio(...args); window.testAudio.push(element); return element; };
     })()`,
     );
-    await evaluate(
-      main,
-      `document.querySelector('[data-projects] > div > button:first-child').click()`,
-    );
+    await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
     const max = () =>
       evaluate(main, `Number(document.querySelector('[aria-label="Playback position"]')?.max)`);
     await until(async () => (await max()) === 6, "the video");
@@ -439,7 +421,7 @@ app.whenReady().then(async () => {
     await screenshot(main, "2-clip");
 
     // Open the recording on its own.
-    await evaluate(main, `document.querySelector('[aria-label="Edit recording 1"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
     await until(async () => (await max()) === 4, "the recording on its own");
     await until(
       () => evaluate(main, `!!document.querySelector('[data-transcript-word]')`),
@@ -485,7 +467,7 @@ app.whenReady().then(async () => {
     );
     let savedLayerIds!: string[], duplicateId: string, duplicateStart!: number;
     if (!process.env.CHORD_TEST_TRANSCRIPT_ONLY) {
-      await evaluate(main, `document.querySelector('[data-layer-label=screen]').click()`);
+      await click(main, `document.querySelector('[data-layer-label=screen]')`);
       await until(
         () =>
           evaluate(
@@ -503,7 +485,7 @@ app.whenReady().then(async () => {
           ),
         "camera settings from its media track",
       );
-      await evaluate(main, `document.querySelector('[data-layer-label=microphone]').click()`);
+      await click(main, `document.querySelector('[data-layer-label=microphone]')`);
       await until(
         () => evaluate(main, `!!document.querySelector('[data-transcript-word]')`),
         "transcript from the microphone track",
@@ -538,7 +520,7 @@ app.whenReady().then(async () => {
             button: "left",
             modifiers: ["leftbuttondown"],
           });
-          await pause(16);
+          await nextFrame(main);
         }
         main.webContents.sendInputEvent({
           type: "mouseUp",
@@ -561,16 +543,16 @@ app.whenReady().then(async () => {
           ),
         "microphone preview volume",
       );
-      await evaluate(
+      await click(
         main,
-        `document.querySelector('[data-layer-label=microphone][data-layer-index="1"]').click()`,
+        `document.querySelector('[data-layer-label=microphone][data-layer-index="1"]')`,
       );
       await until(
         () => evaluate(main, `!!document.querySelector('[aria-label="Microphone 2 volume"]')`),
         "the second microphone controls",
       );
       await setInput("Microphone 2 volume", 80);
-      await evaluate(main, `document.querySelector('[aria-label="Mute microphone 2"]').click()`);
+      await click(main, `document.querySelector('[aria-label="Mute microphone 2"]')`);
       await until(
         () =>
           evaluate(
@@ -579,7 +561,7 @@ app.whenReady().then(async () => {
           ),
         "muting only the second microphone",
       );
-      await evaluate(main, `document.querySelector('[aria-label="Mute microphone 2"]').click()`);
+      await click(main, `document.querySelector('[aria-label="Mute microphone 2"]')`);
       await until(
         () =>
           evaluate(
@@ -594,7 +576,7 @@ app.whenReady().then(async () => {
         ["laser", "Laser pointer"],
         ["clicks", "Click highlights"],
       ] as const) {
-        await evaluate(main, `document.querySelector('[data-effect-label=${kind}]').click()`);
+        await click(main, `document.querySelector('[data-effect-label=${kind}]')`);
         await until(
           () =>
             evaluate(
@@ -612,10 +594,18 @@ app.whenReady().then(async () => {
         );
       }
       await clickAt(main, "[data-effect=laser] [data-span]");
+      await until(
+        () =>
+          evaluate(
+            main,
+            `document.querySelector('[data-effect=laser] [data-span] > div').classList.contains('ring-1')`,
+          ),
+        "the laser span to be selected",
+      );
       // A selected span can be removed from the inspector's actions.
-      await evaluate(
+      await click(
         main,
-        `document.querySelector('[data-inspector] [aria-label="Laser pointer actions"]').click()`,
+        `document.querySelector('[data-inspector] [aria-label="Laser pointer actions"]')`,
       );
       await until(
         () =>
@@ -681,7 +671,7 @@ app.whenReady().then(async () => {
         0,
         "Tracks have no layer reorder controls",
       );
-      await evaluate(main, `document.querySelector('[data-effect-label=laser]').click()`);
+      await click(main, `document.querySelector('[data-effect-label=laser]')`);
 
       const openTrackMenu = async (selector?: string) => {
         await until(
@@ -816,7 +806,6 @@ app.whenReady().then(async () => {
         "Only missing tracks are offered",
       );
       await dismissed.dismiss();
-      await pause(100);
       assert.equal(
         await evaluate(main, `!!document.querySelector('[data-effect=keys]')`),
         false,
@@ -832,9 +821,9 @@ app.whenReady().then(async () => {
           ]);
           await native.choose(native.labels[0]);
         } else {
-          await evaluate(
+          await click(
             main,
-            `[...document.querySelectorAll('[data-track-footer] button')].find(b => b.textContent.includes('Add track')).click()`,
+            `[...document.querySelectorAll('[data-track-footer] button')].find(b => b.textContent.includes('Add track'))`,
           );
           await until(
             () => evaluate(main, `!!document.querySelector('[data-tracks] [role=menu]')`),
@@ -849,7 +838,7 @@ app.whenReady().then(async () => {
             "Only missing tracks are offered",
           );
           await screenshot(main, "button-add-track");
-          await evaluate(main, `document.querySelector('[data-tracks] [role=menuitem]').click()`);
+          await click(main, `document.querySelector('[data-tracks] [role=menuitem]')`);
         }
         await until(
           () =>
@@ -880,7 +869,7 @@ app.whenReady().then(async () => {
           );
           return;
         }
-        await evaluate(main, `document.querySelector('[aria-label="Shortcuts actions"]').click()`);
+        await click(main, `document.querySelector('[aria-label="Shortcuts actions"]')`);
         await until(
           () =>
             evaluate(
@@ -889,9 +878,9 @@ app.whenReady().then(async () => {
             ),
           "effect actions",
         );
-        await evaluate(
+        await click(
           main,
-          `[...document.querySelectorAll('[data-inspector] [role=menuitem]')].find(b => b.textContent === 'Remove track').click()`,
+          `[...document.querySelectorAll('[data-inspector] [role=menuitem]')].find(b => b.textContent === 'Remove track')`,
         );
         await until(
           () => evaluate(main, `!document.querySelector('[data-effect=keys]')`),
@@ -937,7 +926,7 @@ app.whenReady().then(async () => {
       await openAddMenu(false);
       await removeShortcuts();
 
-      await evaluate(main, `document.querySelector('[aria-label="Edit recording 2"]').click()`);
+      await click(main, `document.querySelector('[aria-label="Edit recording 2"]')`);
       await until(
         () => evaluate(main, `!!document.querySelector('[data-layer-label=systemAudio]')`),
         "the system audio track",
@@ -983,12 +972,8 @@ app.whenReady().then(async () => {
       const systemUnmute = await openTrackMenu("[data-layer-label=systemAudio]");
       assert.deepEqual(systemUnmute.labels, ["Unmute", "Show in folder"]);
       await systemUnmute.choose(systemUnmute.labels[0]);
-      await evaluate(main, `document.querySelector('[aria-label="Edit recording 1"]').click()`);
-      await until(
-        () => evaluate(main, `!!document.querySelector('[data-layer-label=microphone]')`),
-        "returning to recording one",
-      );
-      await evaluate(main, `document.querySelector('[data-layer-label=microphone]').click()`);
+      await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
+      await click(main, `document.querySelector('[data-layer-label=microphone]')`);
       await until(
         () => evaluate(main, `!!document.querySelector('[data-transcript-word]')`),
         "returning to the transcript",
@@ -1039,48 +1024,62 @@ app.whenReady().then(async () => {
         "seeking the media",
       );
     };
-    const sample = async (ms: number): Promise<number[]> => {
-      // Sample in the renderer's frame loop: cross-process polling can miss an
-      // entire short cut when the test process is under load.
+    // Plays until the playhead reaches `to`, sampling it each frame, and returns the samples and the forward jumps
+    // the media made, which is how the player skips a cut. Frames can be far apart on a slow machine, so whether a
+    // cut was skipped is told by the jumps, not by which frames were seen.
+    const sample = async (
+      to: number,
+      { play = true } = {},
+    ): Promise<{ times: number[]; jumps: [number, number][] }> => {
       app.focus({ steal: true });
       main.focus();
       await until(() => main.isFocused(), "window focus before playback sampling");
-      return evaluate(
+      const sampled = await evaluate(
         main,
         `new Promise(resolve => {
-        const times = [];
-        const start = performance.now();
-        document.querySelector('[aria-label=Play]').click();
+        const times = [], jumps = [];
+        const position = () => document.querySelector('[aria-label="Playback position"]').valueAsNumber;
+        const last = new Map();
+        const media = () => document.querySelectorAll('[data-player] video, [data-player] audio');
+        const onSeek = event => {
+          const from = last.get(event.target);
+          if (from !== undefined && event.target.currentTime - from > 0.15) jumps.push([from, event.target.currentTime]);
+        };
+        document.addEventListener('seeking', onSeek, true);
+        const deadline = performance.now() + 60000;
+        if (${play}) document.querySelector('[aria-label=Play]').click();
         function frame(now) {
-          times.push(document.querySelector('[aria-label="Playback position"]').valueAsNumber);
-          if (now - start < ${ms}) requestAnimationFrame(frame);
+          for (const element of media()) if (!element.seeking) last.set(element, element.currentTime);
+          times.push(position());
+          if (times.at(-1) < ${to} && now < deadline) requestAnimationFrame(frame);
           else {
+            document.removeEventListener('seeking', onSeek, true);
             document.querySelector('[aria-label=Pause]')?.click();
-            resolve(times);
+            resolve({ times, jumps });
           }
         }
         requestAnimationFrame(frame);
       })`,
       );
+      assert.ok(sampled.times.at(-1) >= to, `Playback reaches ${to} (${sampled.times.at(-1)})`);
+      return sampled;
     };
+    const format = ({ times, jumps }: { times: number[]; jumps: [number, number][] }) =>
+      `${times.map((t) => t.toFixed(2)).join(" ")}; jumps ${JSON.stringify(jumps)}`;
     // Playing skips the cut (0.5–0.8)...
     await seekTo(0.2);
-    let times = await sample(900);
-    console.log("skipping", times.map((t) => t.toFixed(2)).join(" "));
-    assert.ok(!times.some((t) => t > 0.56 && t < 0.78), "Playing skips what is cut");
+    let played = await sample(0.9);
+    console.log("skipping", format(played));
+    assert.ok(!played.times.some((t) => t > 0.56 && t < 0.78), "Playing skips what is cut");
     assert.ok(
-      times.some((t) => t > 0.85),
-      "and goes on after it",
+      played.jumps.some(([from, to]) => from < 0.56 && to >= 0.78),
+      `Playing jumps over the cut (${format(played)})`,
     );
     // ...but the playhead put inside it plays on through it.
     await seekTo(0.55);
-    await pause(300);
-    times = await sample(500);
-    console.log("through", times.map((t) => t.toFixed(2)).join(" "));
-    assert.ok(
-      times.some((t) => t > 0.6 && t < 0.78),
-      "Put inside a cut, playing goes through it",
-    );
+    played = await sample(0.85);
+    console.log("through", format(played));
+    assert.deepEqual(played.jumps, [], "Put inside a cut, playing goes through it");
 
     const undo = async (check: (cuts: { start: number; end: number }[]) => boolean) => {
       await evaluate(main, `document.querySelector('[data-transcript-text]').focus()`);
@@ -1102,7 +1101,7 @@ app.whenReady().then(async () => {
           button: "left",
           modifiers: ["leftbuttondown"],
         });
-        await pause(16);
+        await nextFrame(main);
       }
       main.webContents.sendInputEvent({ type: "mouseUp", ...to, button: "left", clickCount: 1 });
     };
@@ -1278,9 +1277,9 @@ app.whenReady().then(async () => {
     await until(() =>
       evaluate(main, `!!document.querySelector('[aria-label="Silence kept at each end"]')`),
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('[aria-label="Silence length"] [role=radio]')].find(b => b.textContent.trim() === '0.5s').click()`,
+      `[...document.querySelectorAll('[aria-label="Silence length"] [role=radio]')].find(b => b.textContent.trim() === '0.5s')`,
     );
     await setPadding(0.05);
     await until(
@@ -1322,9 +1321,9 @@ app.whenReady().then(async () => {
     );
     await openSilences();
     await until(() => evaluate(main, `${previewPill}?.textContent === '−0.2s'`));
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('div[aria-label="Remove silences"] button')].find(b => b.textContent.trim() === 'Remove 2 silences').click()`,
+      `[...document.querySelectorAll('div[aria-label="Remove silences"] button')].find(b => b.textContent.trim() === 'Remove 2 silences')`,
     );
     await until(
       async () => (await stored(main)).recordings[0].cuts.length === 3,
@@ -1359,23 +1358,31 @@ app.whenReady().then(async () => {
       `[...document.querySelectorAll('[data-transcript-word]')].find(w => w.textContent === 'this').dataset.transcriptWord`,
     );
     await clickAt(main, `[data-transcript-word="${thisWord}"]`);
+    await until(
+      () =>
+        evaluate(
+          main,
+          `document.querySelector('[data-transcript-word="${thisWord}"]').classList.contains('selected')`,
+        ),
+      "the second selection",
+    );
     main.webContents.sendInputEvent({ type: "keyDown", keyCode: "Delete" });
     await until(async () => (await stored(main)).recordings[0].cuts?.length === 2, "a second cut");
     await seekTo(0.55);
-    times = await sample(1000);
+    played = await sample(1.4);
     assert.ok(
-      times.some((t) => t > 0.6 && t < 0.78),
-      `The first cut can be previewed (${times.map((t) => t.toFixed(2)).join(", ")})`,
+      !played.jumps.some(([from]) => from < 0.8),
+      `The first cut can be previewed (${format(played)})`,
     );
-    assert.ok(!times.some((t) => t > 1.05 && t < 1.28), "The next cut is skipped again");
     assert.ok(
-      times.some((t) => t > 1.35),
-      "Playback continues after the second cut",
+      !played.times.some((t) => t > 1.05 && t < 1.28) &&
+        played.jumps.some(([from, to]) => from > 0.8 && from < 1.25 && to >= 1.28),
+      `The next cut is skipped again (${format(played)})`,
     );
 
     // A real drag of the ruler playhead into a cut works during playback too.
     await seekTo(0.2);
-    await evaluate(main, `document.querySelector('[aria-label=Play]').click()`);
+    await click(main, `document.querySelector('[aria-label=Play]')`);
     const ruler = await evaluate(
       main,
       `(() => {
@@ -1386,21 +1393,9 @@ app.whenReady().then(async () => {
     })()`,
     );
     await drag(ruler.from, ruler.to);
-    const previewTimes = [];
-    for (let i = 0; i < 12; i++) {
-      previewTimes.push(
-        await evaluate(
-          main,
-          `document.querySelector('[aria-label="Playback position"]').valueAsNumber`,
-        ),
-      );
-      await pause(25);
-    }
-    await evaluate(main, `document.querySelector('[aria-label=Pause]')?.click()`);
-    assert.ok(
-      previewTimes.some((t) => t > 0.6 && t < 0.78),
-      "Dragging into the cut previews it while playing",
-    );
+    // Still playing from where it was dropped, in the cut.
+    played = await sample(0.85, { play: false });
+    assert.deepEqual(played.jumps, [], "Dragging into the cut previews it while playing");
     await undo((cuts) => cuts?.length === 1);
 
     // Handles span all media and effects and work even in the space below them.
@@ -1448,17 +1443,18 @@ app.whenReady().then(async () => {
     }
 
     // Back to the video: shorter by the cut.
-    await evaluate(main, `document.querySelector('[data-video]').click()`);
+    await click(main, `document.querySelector('[data-video]')`);
     await until(async () => Math.abs((await max()) - 5.7) < 0.02, "the video, shorter by the cut");
     // Play across the cut.
-    await evaluate(main, `document.querySelector('[aria-label=Play]').click()`);
-    await pause(2500);
-    const time = await evaluate(
-      main,
-      `document.querySelector('[aria-label="Playback position"]').valueAsNumber`,
+    await click(main, `document.querySelector('[aria-label=Play]')`);
+    await until(
+      () =>
+        evaluate(
+          main,
+          `document.querySelector('[aria-label="Playback position"]').valueAsNumber > 1.5`,
+        ),
+      "playback to cross the cut",
     );
-    console.log("played to", time);
-    assert.ok(time > 1.5, `Playback crosses the cut (at ${time})`);
     await evaluate(main, `document.querySelector('[aria-label=Pause]')?.click()`);
     await screenshot(main, "5-video-after");
 
@@ -1476,7 +1472,7 @@ app.whenReady().then(async () => {
     assert.equal((await stored(main)).pieces.length, 2, "Double-clicking leaves no cut");
 
     // Captions settings live in the player's captions menu.
-    await evaluate(main, `document.querySelector('[aria-label=Captions]').click()`);
+    await click(main, `document.querySelector('[aria-label=Captions]')`);
     await until(
       () =>
         evaluate(
@@ -1486,11 +1482,11 @@ app.whenReady().then(async () => {
       "caption styles",
     );
     await screenshot(main, "6-captions");
-    await evaluate(main, `document.querySelector('[aria-label=Captions]').click()`);
+    await click(main, `document.querySelector('[aria-label=Captions]')`);
     // Export from the recording view still uses the assembled video and the fixed visual composition.
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === 'Export').click()`,
+      `[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === 'Export')`,
     );
     await until(
       () =>
@@ -1500,22 +1496,21 @@ app.whenReady().then(async () => {
         ),
       "export settings",
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('dialog [aria-label=Resolution] [role=radio]')].find(b => b.textContent.trim() === '720p').click()`,
+      `[...document.querySelectorAll('dialog [aria-label=Resolution] [role=radio]')].find(b => b.textContent.trim() === '720p')`,
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('dialog [aria-label="Frame rate"] [role=radio]')].find(b => b.textContent.trim() === '24').click()`,
+      `[...document.querySelectorAll('dialog [aria-label="Frame rate"] [role=radio]')].find(b => b.textContent.trim() === '24')`,
     );
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('dialog button')].find(b => b.textContent.trim() === 'Export').click()`,
+      `[...document.querySelectorAll('dialog button')].find(b => b.textContent.trim() === 'Export')`,
     );
     await until(
       () => evaluate(main, `document.querySelector('dialog h2')?.textContent === 'Video exported'`),
       "the video export",
-      600,
     );
     const folder = join(recordings, "Playback project", "Exports");
     const exported = join(
@@ -1553,25 +1548,13 @@ app.whenReady().then(async () => {
       }
     assert.equal(redPixels, 0, "The exported camera covers the laser");
     assert.ok(greenPixels > 100, "The export keeps the camera above the screen");
-    await evaluate(
+    await click(
       main,
-      `[...document.querySelectorAll('dialog button')].find(b => b.textContent.trim() === 'Done').click()`,
+      `[...document.querySelectorAll('dialog button')].find(b => b.textContent.trim() === 'Done')`,
     );
-    main.webContents.reload();
-    await until(
-      () =>
-        evaluate(main, `!!document.querySelector('[data-projects] > div > button:first-child')`),
-      "reloading the saved project",
-    );
-    await evaluate(
-      main,
-      `document.querySelector('[data-projects] > div > button:first-child').click()`,
-    );
-    await until(
-      () => evaluate(main, `!!document.querySelector('[aria-label="Edit recording 1"]')`),
-      "opening the saved project",
-    );
-    await evaluate(main, `document.querySelector('[aria-label="Edit recording 1"]').click()`);
+    await reload(main);
+    await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
+    await click(main, `document.querySelector('[aria-label="Edit recording 1"]')`);
     await until(
       () =>
         evaluate(

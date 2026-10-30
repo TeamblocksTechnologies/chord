@@ -139,7 +139,8 @@ async function main() {
       const result = await runCheck(file === nativeCheck ? process.execPath : electron, [file], {
         cwd: desktop,
         env,
-        timeout: noiseOnly ? 10 * 60_000 : 3 * 60_000,
+        // Only bounds a check that hangs: a passing one finishes long before, however slow the machine.
+        timeout: noiseOnly ? 20 * 60_000 : 10 * 60_000,
         logFile: join(output, "output.log"),
       });
       if (result.cancelled) throw new Error("Integration checks cancelled");

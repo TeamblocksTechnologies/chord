@@ -1,10 +1,17 @@
 // Run after building: env -u ELECTRON_RUN_AS_NODE pnpm exec electron src/features/projects/tests/integration/project-context-menu.ts
 import { app, BrowserWindow } from "electron";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate,
+  reload,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 const data = mkdtempSync(join(tmpdir(), "chord-project-menu-test-"));
 app.setPath("userData", data);
 app.on("quit", () =>
@@ -36,24 +43,6 @@ console.log(JSON.stringify({status:'installed',locale:'en-CA',locales:['en-CA','
   { mode: 0o755 },
 );
 process.env.CHORD_TRANSCRIBER_HELPER = speechFixture;
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state") {
-  for (let i = 0; i < 120; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = (win: BrowserWindow, expression: string) =>
-  win.webContents.executeJavaScript(expression);
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
-}
 const rendererErrors: string[] = [];
 app.on("browser-window-created", (_event, win: BrowserWindow) =>
   win.webContents.on("console-message", (event) => {
@@ -76,9 +65,9 @@ app.whenReady().then(async () => {
         )!),
     );
     await until(() => evaluate(main, '!!document.querySelector("[aria-label=Settings]")'));
-    await evaluate(
+    await click(
       main,
-      `Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('New project')).click()`,
+      `Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('New project'))`,
     );
     await until(() => evaluate(main, `!!document.querySelector('[aria-label="Project name"]')`));
     await evaluate(
@@ -160,7 +149,7 @@ app.whenReady().then(async () => {
       "Escape on the menu stays home",
     );
     for (const view of ["Grid view", "List view"] as const) {
-      await evaluate(main, `document.querySelector('[aria-label="${view}"]').click()`);
+      await click(main, `document.querySelector('[aria-label="${view}"]')`);
       await openContext();
       await choose("Delete project");
       await until(dialogOpen, "deletion confirmation");
@@ -185,14 +174,14 @@ app.whenReady().then(async () => {
       () => evaluate(main, `!!document.querySelector('[aria-label="Project name"]')`),
       "Open project action",
     );
-    await evaluate(main, `document.querySelector('[aria-label="Project actions"]').click()`);
+    await click(main, `document.querySelector('[aria-label="Project actions"]')`);
     await until(() => evaluate(main, '!!document.querySelector("[role=menu] [role=menuitem]")'));
     await chooseItem("Delete project");
     await until(dialogOpen);
     const confirmation = await evaluate(main, 'document.querySelector("dialog").innerText');
     await cancel();
     await until(dialogClosed);
-    await evaluate(main, `document.querySelector('[aria-label=Projects]').click()`);
+    await click(main, `document.querySelector('[aria-label=Projects]')`);
     await until(() => evaluate(main, '!!document.querySelector("[data-projects]")'));
     await openContext();
     await choose("Delete project");
@@ -228,16 +217,12 @@ app.whenReady().then(async () => {
         hasMicrophone:false, hasCamera:false, hasSystemAudio:false, markCount:0, pageChanges:[], directory:null}],
     }])`,
     );
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(main, '!!document.querySelector("[data-projects] > div > button:first-child")'),
     );
-    await evaluate(
-      main,
-      `document.querySelector('[data-projects] > div > button:first-child').click()`,
-    );
-    await until(() => evaluate(main, `!!document.querySelector('[aria-label="Project actions"]')`));
-    await evaluate(main, `document.querySelector('[aria-label="Project actions"]').click()`);
+    await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
+    await click(main, `document.querySelector('[aria-label="Project actions"]')`);
     await until(() => evaluate(main, '!!document.querySelector("[role=menu] [role=menuitem]")'));
     await chooseItem("Delete project");
     await until(dialogOpen);

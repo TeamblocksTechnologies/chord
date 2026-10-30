@@ -30,6 +30,12 @@ env -u ELECTRON_RUN_AS_NODE pnpm exec electron tests/integration/settings.ts
 Feature checks live in `src/features/<feature>/tests/integration`. Node and Electron run the TypeScript tests directly.
 `pnpm typecheck` includes strict typechecking for these checks.
 
+Checks must pass however slow the machine is, so they never wait a fixed time for something to happen. They wait for
+the state they check, with the helpers in `tests/support/integration.ts`: `until` and `eventually` poll for it,
+`click` finds and clicks an element in one step, and `reload`, `animationsDone` and `nextFrame` wait for the page.
+A fixed pause is only for checking that something didn't happen (`settle`), or for outlasting a time-based guard in
+the app.
+
 ## Screenshots
 
 The README's screenshots are generated, not taken by hand. From the repository root:

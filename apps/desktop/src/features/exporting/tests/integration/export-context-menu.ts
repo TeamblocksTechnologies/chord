@@ -5,6 +5,12 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate as evaluateIn,
+  reload,
+  until,
+} from "../../../../../tests/support/integration.ts";
 
 const data = mkdtempSync(join(tmpdir(), "chord-export-menu-"));
 app.setPath("userData", data);
@@ -37,14 +43,6 @@ for (const path of [first, second] as const) {
     writeFileSync(path.replace(/\.(mp4|webm)$/, `.${extension}`), "transcript fixture");
 }
 
-async function until(check: () => unknown | Promise<unknown>, message: string) {
-  for (let i = 0; i < 200; i++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-
 const revealed: string[] = [],
   played: string[] = [],
   trashed: string[] = [];
@@ -72,7 +70,7 @@ app.whenReady().then(async () => {
         )!),
       "main window",
     );
-    const evaluate = (expression: string) => main.webContents.executeJavaScript(expression);
+    const evaluate = (expression: string) => evaluateIn(main, expression);
     await until(() => evaluate('!!document.querySelector("[aria-label=Settings]")'), "home");
     const setup = await evaluate("window.chord.desktop.getState().then(state => state.defaults)");
     const now = new Date().toISOString();
@@ -88,12 +86,12 @@ app.whenReady().then(async () => {
     await evaluate(
       `window.chord.desktop.projects.load().then(() => window.chord.desktop.projects.put([${JSON.stringify(project)}]))`,
     );
-    main.webContents.reload();
+    await reload(main);
     await until(
       () => evaluate(`!!document.querySelector('[data-projects] > div > button:first-child')`),
       "project",
     );
-    await evaluate(`document.querySelector('[data-projects] > div > button:first-child').click()`);
+    await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
     await until(
       () => evaluate(`document.querySelectorAll('[data-exports] li').length === 2`),
       "export list",
@@ -221,7 +219,7 @@ app.whenReady().then(async () => {
     assert.ok(existsSync(first) && existsSync(second));
 
     // Ordinary clicks still play; each confirmed deletion refreshes the sidebar and deletes only its own files.
-    await evaluate(`document.querySelector(${JSON.stringify(row(first) + " > button")}).click()`);
+    await click(main, `document.querySelector(${JSON.stringify(row(first) + " > button")})`);
     await until(() => played.length === 1, "play export");
     assert.equal(played[0], first);
     await openContext(first);

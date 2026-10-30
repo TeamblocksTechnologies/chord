@@ -15,6 +15,14 @@ import {
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate,
+  reload,
+  screenshot,
+  settle,
+  until,
+} from "../../../../../tests/support/integration.ts";
 const data = mkdtempSync(join(tmpdir(), "chord-thumbnails-test-"));
 app.setPath("userData", data);
 // The app registers this when it starts before Electron is ready; here it's loaded after.
@@ -147,25 +155,6 @@ writeFileSync(
   }),
 );
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state", tries = 600) {
-  for (let i = 0; i < tries; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = (win: BrowserWindow, expression: string) =>
-  win.webContents.executeJavaScript(expression);
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
-}
-
 app.whenReady().then(async () => {
   try {
     await import(
@@ -207,7 +196,6 @@ app.whenReady().then(async () => {
     await until(
       () => existsSync(manifestPath) && !existsSync(join(thumbnailsFolder, ".lock")),
       "the thumbnails to render",
-      1200,
     );
     const manifest: ThumbnailManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     assert.deepEqual(
@@ -259,7 +247,7 @@ app.whenReady().then(async () => {
     assert.ok(brightness > 40, `The frame shows the recording (${brightness})`);
 
     // The grid shows the cover, and the caption at its time. The window doesn't hear of its own changes, so it reloads.
-    main.webContents.reload();
+    await reload(main);
     const card = `document.querySelector('[data-projects] > div > button')`;
     await until(
       () =>
@@ -320,7 +308,7 @@ app.whenReady().then(async () => {
     const position = () =>
       evaluate(main, `Number(document.querySelector('[aria-label="Playback position"]')?.value)`);
     const back = async () => {
-      await evaluate(main, `document.querySelector('[aria-label="Projects"]').click()`);
+      await click(main, `document.querySelector('[aria-label="Projects"]')`);
       await until(
         () => evaluate(main, `${card}?.querySelector('img')?.complete`),
         "the project card",
@@ -347,7 +335,7 @@ app.whenReady().then(async () => {
           evaluate(main, `${card}.querySelector('.tabular-nums').textContent.trim() !== '0:10'`),
         "the highlighted time",
       );
-      if (fraction === 0) await evaluate(main, `${card}.click()`);
+      if (fraction === 0) await click(main, `${card}`);
       else {
         main.webContents.sendInputEvent({
           type: "mouseDown",
@@ -386,7 +374,7 @@ app.whenReady().then(async () => {
       () => evaluate(main, `${card}.querySelector('.tabular-nums').textContent.trim() === '0:10'`),
       "the card without a highlighted time",
     );
-    await evaluate(main, `${card}.click()`);
+    await click(main, `${card}`);
     await until(
       () => evaluate(main, `document.querySelector('[aria-label="Play"]')?.disabled === false`),
       "the player without a highlighted time",
@@ -394,18 +382,22 @@ app.whenReady().then(async () => {
     assert.equal(await position(), 0, "A regular card click opens at the beginning");
     await back();
 
-    // Rendered again too soon, nothing changes: the manifest is the same file.
+    // Rendered again too soon, nothing changes: the manifest is the same file. This gives the library's check, two
+    // seconds after a change, time to run. It only holds within the two minute threshold, which a very slow machine
+    // could pass by now, so it's only checked within it.
     const renderedAt = manifest.renderedAt;
     await evaluate(
       main,
       `window.chord.desktop.projects.load().then(projects => window.chord.desktop.projects.put([{ ...projects.find(p => p.id === 'thumbs'), captions: { style: 'word', length: 'short' } }]))`,
     );
-    await pause(4000);
-    assert.equal(
-      JSON.parse(readFileSync(manifestPath, "utf8")).renderedAt,
-      renderedAt,
-      "Within the threshold, the last render stands",
-    );
+    await settle(4000);
+    if (Date.now() - Date.parse(renderedAt) < 110_000)
+      assert.equal(
+        JSON.parse(readFileSync(manifestPath, "utf8")).renderedAt,
+        renderedAt,
+        "Within the threshold, the last render stands",
+      );
+    else console.log("Skipped the threshold check: the render is older than the threshold now");
 
     // Deleted from Finder, they render again.
     rmSync(thumbnailsFolder, { recursive: true, force: true });
@@ -416,7 +408,6 @@ app.whenReady().then(async () => {
     await until(
       () => existsSync(manifestPath) && !existsSync(join(thumbnailsFolder, ".lock")),
       "the thumbnails to render again",
-      1200,
     );
     assert.equal(
       JSON.parse(readFileSync(manifestPath, "utf8")).captionStyle,

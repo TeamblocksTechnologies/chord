@@ -1,18 +1,19 @@
 // Run after building: env -u ELECTRON_RUN_AS_NODE pnpm exec electron src/features/recording/tests/integration/toolbar.ts
 import { app, BrowserWindow, globalShortcut, screen } from "electron";
 import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-  readFileSync,
-  mkdirSync,
-  existsSync,
-  readdirSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  animationsDone,
+  click,
+  evaluate,
+  eventually,
+  screenshot,
+  settle,
+  until,
+} from "../../../../../tests/support/integration.ts";
 const data = mkdtempSync(join(tmpdir(), "chord-toolbar-test-"));
 app.setPath("userData", data);
 app.on("quit", () =>
@@ -55,21 +56,6 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
 );
 process.env.CHORD_RECORDER_HELPER = fixture;
 process.env.CHORD_RECORDINGS_FOLDER = join(data, "recordings");
-const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state") {
-  for (let i = 0; i < 120; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = async (win: BrowserWindow, expression: string) => {
-  try {
-    return await win.webContents.executeJavaScript(expression);
-  } catch (error) {
-    throw new Error(`Renderer expression failed: ${expression}`, { cause: error });
-  }
-};
 const surfaceWindow = (kind: string) =>
   BrowserWindow.getAllWindows().find(
     (w) => new URL(w.webContents.getURL() || "about:blank").searchParams.get("surface") === kind,
@@ -81,12 +67,12 @@ const escape = (win: BrowserWindow) => {
 // Dropdowns open in the page of the window they belong to.
 const menuOpen = (win: BrowserWindow) => evaluate(win, '!!document.querySelector("[role=menu]")');
 async function openMenu(win: BrowserWindow, kind: string) {
-  await evaluate(
+  await click(
     win,
-    `document.querySelector('[data-source-toggle="${kind.toLowerCase()}"] + [data-popup-trigger]').click()`,
+    `document.querySelector('[data-source-toggle="${kind.toLowerCase()}"] + [data-popup-trigger]')`,
   );
   await until(() => menuOpen(win), `${kind} menu`);
-  await pause(200); // Let the entrance animation finish before measuring or clicking.
+  await animationsDone(win);
 }
 const menuClosed = (win: BrowserWindow, message: string) =>
   until(async () => !(await menuOpen(win)), message);
@@ -115,21 +101,12 @@ async function barRect(win: BrowserWindow) {
   const frame = win.getBounds();
   return { ...r, screenY: frame.y + r.y, screenX: frame.x + r.x };
 }
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
-}
 // Moves the toolbar's bar to `y` on screen the way a drag does.
 async function moveToolbar(win: BrowserWindow, y: number) {
   const before = await barRect(win);
   await evaluate(win, "window.chord.desktop.overlay.dragStart()");
   await evaluate(win, `window.chord.desktop.overlay.dragMove(0, ${y - before.screenY})`);
   await evaluate(win, "window.chord.desktop.overlay.dragEnd()");
-  await pause(100);
 }
 // An uncaught error in any page, like a Svelte effect loop that freezes it, fails the run.
 const rendererErrors: string[] = [];
@@ -220,8 +197,10 @@ app.whenReady().then(async () => {
         async () => (await evaluate(bar, "window.chord.desktop.getState()")).toolbar.side === side,
         `toolbar at ${side}`,
       );
-      rect = await barRect(bar);
-      assert.equal(rect.screenY, y, "The bar stays where it was dropped");
+      await eventually(async () => {
+        rect = await barRect(bar);
+        assert.equal(rect.screenY, y, "The bar stays where it was dropped");
+      }, `the bar at ${y}`);
       const frame = bar.getBounds();
       await openMenu(bar, "Camera");
       assert.deepEqual(
@@ -278,7 +257,7 @@ app.whenReady().then(async () => {
             ),
           `${kind} source to toggle`,
         );
-        await pause(100);
+        await settle();
         assert.equal(
           await evaluate(bar, `document.querySelector('[role=menu]')?.dataset.test`),
           kind,
@@ -398,7 +377,7 @@ app.whenReady().then(async () => {
     // Real pointer input dismisses outside the dropdown, including clicks on the toolbar and the empty room beside it.
     await openMenu(bar, "Camera");
     await clickAt(bar, "[role=menu]");
-    await pause(100);
+    await settle();
     assert.equal(await menuOpen(bar), true, "Clicks inside the dropdown must keep it open");
     await clickAt(bar, "[data-toolbar]", { x: 500, y: 4 });
     await menuClosed(bar, "toolbar click to dismiss the dropdown");
@@ -409,7 +388,7 @@ app.whenReady().then(async () => {
     await openMenu(bar, "Camera");
     await clickAt(bar, '[data-source-toggle="camera"] + [data-popup-trigger]');
     await menuClosed(bar, "same dropdown to toggle closed");
-    await pause(100);
+    await settle();
     assert.equal(
       await menuOpen(bar),
       false,
@@ -425,9 +404,9 @@ app.whenReady().then(async () => {
         ),
       "another dropdown to replace it",
     );
-    await pause(200); // Let the entrance animation finish before clicking.
+    await animationsDone(bar);
     await clickAt(bar, '[role=menu] [role=radio][title="Focused window"]');
-    await pause(100);
+    await settle();
     assert.equal(
       await menuOpen(bar),
       true,
@@ -615,9 +594,9 @@ app.whenReady().then(async () => {
     await until(() => surfaceWindow("main") && surfaceWindow("main") !== main);
     main = surfaceWindow("main");
     await until(() => evaluate(main, 'document.body.innerText.toLowerCase().includes("paused")'));
-    await evaluate(
+    await click(
       main,
-      `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Finish recording')).click()`,
+      `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Finish recording'))`,
     );
     // The take is saved once the helper has finalized its files.
     // Saved to the project library in the app's data folder.

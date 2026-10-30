@@ -4,6 +4,7 @@ import { app, BrowserWindow } from "electron";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { eventually } from "../support/integration.ts";
 const fixture = mkdtempSync(join(import.meta.dirname, ".ui-composables-"));
 app.setPath("userData", join(fixture, "user-data"));
 app.on("quit", () =>
@@ -290,12 +291,16 @@ app.whenReady().then(async () => {
       movementX: 30,
       movementY: 5,
     });
-    await frame();
-    assert.ok(
-      (await run("harness.trace.moves")).some(
-        (delta: { x: number; y: number }) => delta.x === 30 && delta.y === 5,
-      ),
-      "Native captured drags report deltas",
+    // Native input arrives separately from scripts, so it may be handled a frame or two later.
+    await eventually(
+      async () =>
+        assert.ok(
+          (await run("harness.trace.moves")).some(
+            (delta: { x: number; y: number }) => delta.x === 30 && delta.y === 5,
+          ),
+          "Native captured drags report deltas",
+        ),
+      "the drag to move",
     );
     await run("harness.removeDrag()");
     await frame();
@@ -312,6 +317,9 @@ app.whenReady().then(async () => {
       );
       await frame();
     };
+    // Dialogs close on a timer once their exit transition ends (EXIT_MS in the UI package's dialog.ts). A longer
+    // timer started after it in the page always runs after it, however slow the machine.
+    const afterDialogExit = () => run("new Promise(resolve => setTimeout(resolve, 180))");
     await openDelete("/first.mp4");
     await click("dialog button:first-child");
     await openDelete("/second.mp4");
@@ -320,7 +328,7 @@ app.whenReady().then(async () => {
       true,
       "Another export opens a fresh confirmation during the previous exit",
     );
-    await run("new Promise(resolve => setTimeout(resolve, 180))");
+    await afterDialogExit();
     assert.equal(
       await run('document.querySelector("dialog").open'),
       true,
@@ -334,7 +342,7 @@ app.whenReady().then(async () => {
       "The same export can be reopened during its exit",
     );
     await click("dialog button:last-child");
-    await run("new Promise(resolve => setTimeout(resolve, 180))");
+    await afterDialogExit();
     assert.deepEqual(
       await run("exportTrashed"),
       ["/second.mp4"],
@@ -364,7 +372,7 @@ app.whenReady().then(async () => {
     await run(confirm);
     await run("harness.complete()");
     await frame();
-    await run("new Promise(resolve => setTimeout(resolve, 180))");
+    await afterDialogExit();
     assert.equal(
       await run("harness.trace.closed"),
       1,
@@ -378,7 +386,7 @@ app.whenReady().then(async () => {
     await frame();
     await run("harness.complete()");
     await frame();
-    await run("new Promise(resolve => setTimeout(resolve, 180))");
+    await afterDialogExit();
     assert.equal(
       await run("harness.trace.closed"),
       2,

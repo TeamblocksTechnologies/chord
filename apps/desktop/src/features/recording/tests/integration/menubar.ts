@@ -1,7 +1,7 @@
 // Run after building: env -u ELECTRON_RUN_AS_NODE pnpm exec electron src/features/recording/tests/integration/menubar.ts
 import { app, BrowserWindow, screen } from "electron";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -50,21 +50,6 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
 );
 process.env.CHORD_RECORDER_HELPER = fixture;
 process.env.CHORD_RECORDINGS_FOLDER = join(data, "recordings");
-const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state") {
-  for (let i = 0; i < 120; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = async (win: BrowserWindow, expression: string) => {
-  try {
-    return await win.webContents.executeJavaScript(expression);
-  } catch (error) {
-    throw new Error(`Renderer expression failed: ${expression}`, { cause: error });
-  }
-};
 const surfaceWindow = (kind: string) =>
   BrowserWindow.getAllWindows().find(
     (w) => new URL(w.webContents.getURL() || "about:blank").searchParams.get("surface") === kind,
@@ -82,15 +67,26 @@ const escape = (win: BrowserWindow) => {
 // Dropdowns open in the page of the window they belong to.
 const menuOpen = (win: BrowserWindow) => evaluate(win, '!!document.querySelector("[role=menu]")');
 async function openMenu(win: BrowserWindow, kind: string) {
-  await evaluate(
+  await click(
     win,
-    `document.querySelector('[data-source-toggle="${kind.toLowerCase()}"] + [data-popup-trigger]').click()`,
+    `document.querySelector('[data-source-toggle="${kind.toLowerCase()}"] + [data-popup-trigger]')`,
   );
   await until(() => menuOpen(win), `${kind} menu`);
-  await pause(200); // Let the entrance animation finish before measuring or clicking.
+  await animationsDone(win);
 }
 const menuClosed = (win: BrowserWindow, message: string) =>
   until(async () => !(await menuOpen(win)), message);
+// A click on the icon just after the panel lost focus is the one that took it, so it doesn't reopen the panel (see
+// REOPEN_DELAY in the menu bar). Waiting at least that long is safe however slow the machine.
+const reopenDelay = () => pause(400);
+// Whether an overlay window lets the page have mouse events, as its cursor poll last set.
+const ignoringMouse = new WeakMap<BrowserWindow, boolean>();
+const { setIgnoreMouseEvents } = BrowserWindow.prototype;
+BrowserWindow.prototype.setIgnoreMouseEvents = function (this: BrowserWindow, ignore, options) {
+  ignoringMouse.set(this, ignore);
+  return setIgnoreMouseEvents.call(this, ignore, options);
+};
+const takesClicks = (win: BrowserWindow) => ignoringMouse.get(win) !== true;
 async function clickAt(win: BrowserWindow, selector: string, offset?: { x: number; y: number }) {
   const point = await evaluate(
     win,
@@ -103,17 +99,10 @@ async function clickAt(win: BrowserWindow, selector: string, offset?: { x: numbe
   const bounds = win.getBounds();
   cursor = { x: bounds.x + point.x, y: bounds.y + point.y };
   win.focus();
-  await pause(50); // Let the overlay's cursor poll enable mouse events before the synthetic click.
+  // The overlay's cursor poll lets clicks through to the page once it sees the cursor over the panel.
+  await until(() => takesClicks(win), `the panel to take clicks at ${selector}`);
   win.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...point });
   win.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...point });
-}
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
 }
 // An uncaught error in any page, like a Svelte effect loop that freezes it, fails the run.
 const rendererErrors: string[] = [];
@@ -127,6 +116,15 @@ app.on("browser-window-created", (_e, w) =>
 
 // The menu bar icon is the only way to open the panel, so the test keeps hold of it to click it.
 import electron from "electron";
+import {
+  animationsDone,
+  click,
+  evaluate,
+  eventually,
+  pause,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 const trays: Electron.Tray[] = [];
 const { on } = electron.Tray.prototype;
 electron.Tray.prototype.on = new Proxy(on, {
@@ -150,6 +148,22 @@ async function clickTray() {
   trays[0].emit("click");
 }
 
+// Opens the panel from the icon. The panel closes when it loses focus, as a menu does, and a window taking focus late
+// (the main window as the app starts, on a slow machine) can close it as it opens. So it's opened again, once the app
+// says it's closed and the click that reopened it too soon can't count.
+async function openPanel(label = "the panel to show") {
+  await clickTray();
+  await until(async () => {
+    const panel = surfaceWindow("menubar");
+    if (panel?.isVisible()) return true;
+    const page = [panel, surfaceWindow("main")].find((win) => win && !win.isDestroyed());
+    if (page && !(await evaluate(page, "window.chord.desktop.getState()")).menubar.visible) {
+      await reopenDelay();
+      if (!surfaceWindow("menubar")?.isVisible()) await clickTray();
+    }
+    return false;
+  }, label);
+}
 app.whenReady().then(async () => {
   try {
     screen.getCursorScreenPoint = () => cursor;
@@ -181,10 +195,21 @@ app.whenReady().then(async () => {
     for (const win of BrowserWindow.getAllWindows())
       win.webContents.send("helper:notification", "devicesChanged", {});
 
-    // Opening: the home screen under the icon, with room for dropdowns on the roomier side.
-    await pause(500); // Let macOS finish positioning the temporary tray icon.
-    await clickTray();
-    await until(() => surfaceWindow("menubar")?.isVisible(), "panel to show");
+    // Opening: the home screen under the icon, with room for dropdowns on the roomier side. macOS positions a new
+    // icon a moment after it's added, and the panel is placed under it as it opens, so it's opened again if the
+    // icon moved meanwhile.
+    // Focus settles first, so the main window taking it as the app starts can't close the panel just opened.
+    app.focus({ steal: true });
+    main.focus();
+    await until(() => main.isFocused(), "the main window to take focus");
+    let icon = trays[0].getBounds();
+    await openPanel();
+    while (JSON.stringify(trays[0].getBounds()) !== JSON.stringify(icon)) {
+      icon = trays[0].getBounds();
+      await clickTray();
+      await until(() => !surfaceWindow("menubar").isVisible(), "panel to hide");
+      await openPanel();
+    }
     const panel = surfaceWindow("menubar");
     assert.equal(
       app.dock!.isVisible(),
@@ -210,7 +235,6 @@ app.whenReady().then(async () => {
     assert.equal(state.menubar.visible, true);
     const frame = panel.getBounds();
     const rect = await panelRect(panel);
-    const icon = trays[0].getBounds();
     assert.ok(
       frame.width >= rect.width + 416,
       "The window keeps room beside the panel for the widest dropdown",
@@ -262,7 +286,7 @@ app.whenReady().then(async () => {
     assert.equal(panel.isVisible(), true, "Escape closes a dropdown before the panel");
 
     // Changes in the panel are the quick-start setup the main window shows.
-    await evaluate(panel, `document.querySelector('[aria-label^="System audio"]').click()`);
+    await click(panel, `document.querySelector('[aria-label^="System audio"]')`);
     const audio = (await evaluate(panel, "window.chord.desktop.getState()")).defaults.systemAudio;
     await until(() =>
       evaluate(
@@ -272,9 +296,9 @@ app.whenReady().then(async () => {
     );
 
     // New project opens it in the main window, saved to the library, and hides the panel.
-    await evaluate(
+    await click(
       panel,
-      `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('New project')).click()`,
+      `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('New project'))`,
     );
     await until(() => !panel.isVisible(), "panel to hide when leaving home");
     await until(
@@ -297,8 +321,7 @@ app.whenReady().then(async () => {
       main,
       `(() => { const input = document.querySelector('input'); input.value = 'Launch video'; input.dispatchEvent(new Event('input', {bubbles:true})); })()`,
     );
-    await clickTray();
-    await until(() => panel.isVisible(), "panel to show again");
+    await openPanel("panel to show again");
     await until(
       () => evaluate(panel, 'document.body.innerText.includes("Launch video")'),
       "renamed project in the panel",
@@ -355,7 +378,7 @@ app.whenReady().then(async () => {
     const sortOpen = () => evaluate(panel, '!!document.querySelector("[role=listbox]")');
     await clickAt(panel, "[role=combobox][aria-label=Sort]");
     await until(sortOpen, "sort options");
-    await pause(200); // Let the entrance animation finish before measuring.
+    await animationsDone(panel);
     const sortBounds = await evaluate(
       panel,
       `(() => {
@@ -381,7 +404,10 @@ app.whenReady().then(async () => {
     press("End");
     press("Return");
     await until(async () => !(await sortOpen()));
-    assert.deepEqual(await projectNames(), ["Alpha", "Launch video", "Zulu"]);
+    await eventually(
+      async () => assert.deepEqual(await projectNames(), ["Alpha", "Launch video", "Zulu"]),
+      "the sort order",
+    );
     assert.equal(
       await evaluate(panel, 'document.activeElement.getAttribute("role")'),
       "combobox",
@@ -393,27 +419,40 @@ app.whenReady().then(async () => {
     press("Down");
     press("Return");
     await until(async () => !(await sortOpen()));
-    assert.deepEqual(await projectNames(), ["Launch video", "Zulu", "Alpha"]);
+    await eventually(
+      async () => assert.deepEqual(await projectNames(), ["Launch video", "Zulu", "Alpha"]),
+      "the sort order",
+    );
     await clickAt(panel, "[role=combobox][aria-label=Sort]");
     await until(sortOpen, "sort options");
-    await pause(200);
+    await animationsDone(panel);
     await clickAt(panel, "[role=option]:first-child");
     await until(async () => !(await sortOpen()));
-    assert.deepEqual(await projectNames(), ["Launch video", "Alpha", "Zulu"]);
+    await eventually(
+      async () => assert.deepEqual(await projectNames(), ["Launch video", "Alpha", "Zulu"]),
+      "the sort order",
+    );
     await clickAt(panel, "[role=combobox][aria-label=Sort]");
+    await until(sortOpen, "sort options");
     press("n");
     press("Return");
     await until(async () => !(await sortOpen()));
-    assert.deepEqual(
-      await projectNames(),
-      ["Alpha", "Launch video", "Zulu"],
-      "Typing finds a sort option",
+    await eventually(
+      async () =>
+        assert.deepEqual(
+          await projectNames(),
+          ["Alpha", "Launch video", "Zulu"],
+          "Typing finds a sort option",
+        ),
+      "the sort order",
     );
     await clickAt(panel, "[role=combobox][aria-label=Sort]");
+    await until(sortOpen, "sort options");
     await escape(panel);
     await until(async () => !(await sortOpen()));
     assert.equal(panel.isVisible(), true, "Escape dismisses the sort before the menu bar panel");
     await clickAt(panel, "[role=combobox][aria-label=Sort]");
+    await until(sortOpen, "sort options");
     press("Tab");
     await until(async () => !(await sortOpen()));
     assert.equal(
@@ -422,6 +461,7 @@ app.whenReady().then(async () => {
       "Tab continues to the next control",
     );
     await clickAt(panel, "[role=combobox][aria-label=Sort]");
+    await until(sortOpen, "sort options");
     await clickAt(panel, "h2");
     await until(async () => !(await sortOpen()), "outside click to close sort");
     await evaluate(main, 'window.chord.desktop.projects.remove(["sort-alpha", "sort-zulu"])');
@@ -451,29 +491,24 @@ app.whenReady().then(async () => {
     );
     await clickTray();
     await until(() => !panel.isVisible());
-    await pause(400); // Allow the native blur/reopen debounce to settle.
-    await clickTray();
-    await until(() => panel.isVisible());
+    await reopenDelay();
+    await openPanel();
     await until(async () => (await scrollTop()) === 0, "reopened panel to scroll to the top");
 
     // Settings and projects open in the main window.
-    await evaluate(main, `document.querySelector('[aria-label=Projects]').click()`);
+    await click(main, `document.querySelector('[aria-label=Projects]')`);
     await until(
       () => evaluate(main, '!document.querySelector("[aria-label=Projects]")'),
       "main window back home",
     );
-    await evaluate(panel, `document.querySelector('[aria-label=Settings]').click()`);
+    await click(panel, `document.querySelector('[aria-label=Settings]')`);
     await until(() => !panel.isVisible());
     await until(
       () => evaluate(main, '!!document.querySelector("#settings-panel-general")'),
       "settings in the main window",
     );
-    await clickTray();
-    await until(() => panel.isVisible());
-    await evaluate(
-      panel,
-      `document.querySelector('[data-projects] > div > button:first-child').click()`,
-    );
+    await openPanel();
+    await click(panel, `document.querySelector('[data-projects] > div > button:first-child')`);
     await until(() => !panel.isVisible());
     await until(
       () =>
@@ -485,8 +520,7 @@ app.whenReady().then(async () => {
     );
 
     // The logo opens home in the main window even when it currently shows a project.
-    await clickTray();
-    await until(() => panel.isVisible());
+    await openPanel();
     await clickAt(panel, '[aria-label="Open Chord home"] svg');
     await until(() => !panel.isVisible(), "logo to close the panel");
     await until(
@@ -502,10 +536,16 @@ app.whenReady().then(async () => {
     const mainBounds = main.getBounds();
     for (const width of [1100, 480] as const) {
       main.setContentSize(width, 800);
+      // The page resizes a little after the window, then lays out again.
+      await until(
+        () => evaluate(main, `innerWidth === ${width}`),
+        `the page to be ${width}px wide`,
+      );
       await evaluate(
         main,
         "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
       );
+      await animationsDone(main);
       const controls = await evaluate(
         main,
         `(() => {
@@ -542,13 +582,11 @@ app.whenReady().then(async () => {
     main.setBounds(mainBounds);
 
     // Escape hides the panel; clicking the icon toggles it.
-    await clickTray();
-    await until(() => panel.isVisible());
+    await openPanel();
     await escape(panel);
     await until(() => !panel.isVisible(), "Escape to hide the panel");
-    await pause(400);
-    await clickTray();
-    await until(() => panel.isVisible());
+    await reopenDelay();
+    await openPanel();
     await clickTray();
     await until(() => !panel.isVisible(), "a second click to hide the panel");
 
@@ -556,9 +594,8 @@ app.whenReady().then(async () => {
     main.close();
     await until(() => main.isDestroyed());
     await until(() => !app.dock!.isVisible(), "Dock icon to hide when the main window closes");
-    await pause(400);
-    await clickTray();
-    await until(() => panel.isVisible());
+    await reopenDelay();
+    await openPanel();
     assert.equal(app.dock!.isVisible(), false, "The menu bar panel works without a Dock icon");
     await clickAt(panel, '[aria-label="Open Chord home"] svg');
     await until(() => surfaceWindow("main")?.isVisible(), "main window to reopen from the panel");

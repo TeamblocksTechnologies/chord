@@ -9,6 +9,7 @@
   "include": [
     "scripts/**/*.test.ts",
     "tests/integration/**/*.ts",
+    "tests/support/**/*.ts",
     "src/features/*/tests/integration/**/*.ts"
   ]
 }

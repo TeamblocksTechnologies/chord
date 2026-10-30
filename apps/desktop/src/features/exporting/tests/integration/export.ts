@@ -14,6 +14,14 @@ import {
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+  click,
+  evaluate,
+  nextFrame,
+  reload,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 const data = mkdtempSync(join(tmpdir(), "chord-export-test-"));
 app.setPath("userData", data);
 // The app registers this when it starts before Electron is ready; here it's loaded after.
@@ -148,24 +156,6 @@ writeFileSync(
   }),
 );
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(check: () => unknown | Promise<unknown>, message = "UI state", tries = 600) {
-  for (let i = 0; i < tries; i++) {
-    if (await check()) return;
-    await pause(50);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-const evaluate = (win: BrowserWindow, expression: string) =>
-  win.webContents.executeJavaScript(expression);
-async function screenshot(win: BrowserWindow, label: string) {
-  if (!process.env.CHORD_TEST_SCREENSHOTS) return;
-  mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-  writeFileSync(
-    join(process.env.CHORD_TEST_SCREENSHOTS, `${label}.png`),
-    (await win.webContents.capturePage()).toPNG(),
-  );
-}
 const probe = (file: string, entries: string) =>
   JSON.parse(
     execFileSync("ffprobe", ["-v", "error", "-show_entries", entries, "-of", "json", file], {
@@ -214,14 +204,11 @@ app.whenReady().then(async () => {
     }]))`,
       );
     await putProject(undefined);
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(main, '!!document.querySelector("[data-projects] > div > button:first-child")'),
     );
-    await evaluate(
-      main,
-      `document.querySelector('[data-projects] > div > button:first-child').click()`,
-    );
+    await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
     const exportButton = `[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === 'Export')`;
     await until(
       () => evaluate(main, `!!${exportButton} && !${exportButton}.disabled`),
@@ -231,10 +218,7 @@ app.whenReady().then(async () => {
     const dialogButton = (label: string) =>
       `[...document.querySelectorAll('dialog button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
     const select = async (label: string, option: string) => {
-      await evaluate(
-        main,
-        `document.querySelector('dialog [aria-label=${JSON.stringify(label)}]').click()`,
-      );
+      await click(main, `document.querySelector('dialog [aria-label=${JSON.stringify(label)}]')`);
       await until(
         () =>
           evaluate(
@@ -243,9 +227,9 @@ app.whenReady().then(async () => {
           ),
         `the ${option} option`,
       );
-      await evaluate(
+      await click(
         main,
-        `[...document.querySelectorAll('[role=option]')].find(o => o.textContent.trim() === ${JSON.stringify(option)}).click()`,
+        `[...document.querySelectorAll('[role=option]')].find(o => o.textContent.trim() === ${JSON.stringify(option)})`,
       );
     };
     const radio = (label: string, option: string) =>
@@ -258,16 +242,15 @@ app.whenReady().then(async () => {
     const exported = () => (existsSync(exportsFolder) ? readdirSync(exportsFolder) : []);
     async function exportAs(extension: string, choose: () => Promise<unknown>, gif = false) {
       const before = new Set(exported());
-      await evaluate(main, `${exportButton}.click()`);
+      await click(main, `${exportButton}`);
       await until(
         () =>
           evaluate(main, `document.querySelector('dialog')?.open && !!${dialogButton("Export")}`),
         "the export dialog",
       );
       await choose();
-      await pause(200);
       await screenshot(main, `export-settings-${extension}`);
-      await evaluate(main, `${dialogButton("Export")}.click()`);
+      await click(main, `${dialogButton("Export")}`);
       await until(
         () =>
           evaluate(
@@ -283,7 +266,7 @@ app.whenReady().then(async () => {
         await evaluate(main, `document.querySelector('dialog p')?.textContent`),
       );
       await screenshot(main, `export-done-${extension}`);
-      await evaluate(main, `${dialogButton("Done")}.click()`);
+      await click(main, `${dialogButton("Done")}`);
       await until(() => evaluate(main, `!document.querySelector('dialog')`), "the dialog to close");
       const allAdded = exported().filter((name: string) => !before.has(name));
       const added = allAdded.filter((name: string) => name.endsWith(`.${extension}`));
@@ -396,18 +379,7 @@ app.whenReady().then(async () => {
       await radio("Resolution", "720p");
       await radio("Frame rate", "24");
       await select("File type", "WebM (VP9)");
-      await until(
-        () =>
-          evaluate(
-            main,
-            `!!document.querySelector('dialog [aria-label="Transparent background"]')`,
-          ),
-        "the transparency switch",
-      );
-      await evaluate(
-        main,
-        `document.querySelector('dialog [aria-label="Transparent background"]').click()`,
-      );
+      await click(main, `document.querySelector('dialog [aria-label="Transparent background"]')`);
       await until(
         () =>
           evaluate(
@@ -437,11 +409,11 @@ app.whenReady().then(async () => {
 
     // Cancelling removes the unfinished file.
     const finished = exported().length;
-    await evaluate(main, `${exportButton}.click()`);
+    await click(main, `${exportButton}`);
     await until(() => evaluate(main, `!!${dialogButton("Export")}`), "the export dialog again");
     await select("File type", "MP4 (H.264)");
     await radio("Resolution", "4K");
-    await evaluate(main, `${dialogButton("Export")}.click()`);
+    await click(main, `${dialogButton("Export")}`);
     await until(
       () =>
         evaluate(
@@ -460,7 +432,7 @@ app.whenReady().then(async () => {
     );
     assert.equal(exported().length, finished + 1, "The export is written as it goes");
     await screenshot(main, "export-progress");
-    await evaluate(main, `${dialogButton("Cancel")}.click()`);
+    await click(main, `${dialogButton("Cancel")}`);
     await until(
       () =>
         evaluate(
@@ -506,8 +478,8 @@ app.whenReady().then(async () => {
         );
         await radio("Width", "480");
         await radio("Frame rate", "10");
-        await evaluate(main, `document.querySelector('dialog [aria-label=Loop]').click()`);
-        await evaluate(main, `document.querySelector('dialog [aria-label=Range]').click()`);
+        await click(main, `document.querySelector('dialog [aria-label=Loop]')`);
+        await click(main, `document.querySelector('dialog [aria-label=Range]')`);
         await until(
           () => evaluate(main, `!!document.querySelector('dialog [aria-label="Start time"]')`),
           "the range fields",
@@ -601,7 +573,7 @@ app.whenReady().then(async () => {
     const ranged = await exportAs("mp4", async () => {
       await select("File type", "MP4 (H.264)");
       await select("Aspect ratio", "Original");
-      await evaluate(main, `document.querySelector('dialog [aria-label=Range]').click()`);
+      await click(main, `document.querySelector('dialog [aria-label=Range]')`);
       await until(
         () => evaluate(main, `!!document.querySelector('dialog [aria-label="Start time"]')`),
         "the range fields for a video",
@@ -634,7 +606,7 @@ app.whenReady().then(async () => {
 
     // Cancelling a GIF removes it too.
     const beforeGifCancel = exported().length;
-    await evaluate(main, `${exportButton}.click()`);
+    await click(main, `${exportButton}`);
     await until(() => evaluate(main, `!!${dialogButton("Export")}`), "the export dialog for a GIF");
     await select("File type", "GIF");
     await until(
@@ -643,7 +615,7 @@ app.whenReady().then(async () => {
     );
     await radio("Width", "1080");
     await radio("Frame rate", "24");
-    await evaluate(main, `${dialogButton("Export")}.click()`);
+    await click(main, `${dialogButton("Export")}`);
     await until(
       () =>
         evaluate(
@@ -656,7 +628,7 @@ app.whenReady().then(async () => {
       () => exported().length === beforeGifCancel + 1,
       "the GIF to be written as it goes",
     );
-    await evaluate(main, `${dialogButton("Cancel")}.click()`);
+    await click(main, `${dialogButton("Cancel")}`);
     await until(
       () =>
         evaluate(
@@ -666,7 +638,7 @@ app.whenReady().then(async () => {
       "cancelling the GIF",
     );
     await until(() => exported().length === beforeGifCancel, "the unfinished GIF to be removed");
-    await evaluate(main, `${dialogButton("Cancel")}.click()`);
+    await click(main, `${dialogButton("Cancel")}`);
     await until(
       () => evaluate(main, `!document.querySelector('dialog')`),
       "the dialog to close after cancelling",
@@ -682,14 +654,11 @@ app.whenReady().then(async () => {
     await putProject({
       "microphone:0": { volume: 1, muted: false, leveled: true, levelGain: gain },
     });
-    main.webContents.reload();
+    await reload(main);
     await until(() =>
       evaluate(main, '!!document.querySelector("[data-projects] > div > button:first-child")'),
     );
-    await evaluate(
-      main,
-      `document.querySelector('[data-projects] > div > button:first-child').click()`,
-    );
+    await click(main, `document.querySelector('[data-projects] > div > button:first-child')`);
     await until(
       () => evaluate(main, `!!${exportButton} && !${exportButton}.disabled`),
       "the leveled project to load",
@@ -714,6 +683,16 @@ app.whenReady().then(async () => {
         main,
         `(() => { const slider = document.querySelector('[aria-label="Playback position"]'); slider.value = '${time}'; slider.dispatchEvent(new Event('input', { bubbles: true })); slider.dispatchEvent(new Event('change', { bubbles: true })); })()`,
       );
+    // A frame is taken at the player's time, which reads the clip before until a new clip has loaded, so the
+    // playhead is only there once the media has settled and it still is a frame later.
+    const playheadAt = (time: number) => {
+      const settled = `[...document.querySelectorAll('[data-player] video')].every(v => !v.src || (!v.seeking && v.readyState >= 2)) && Math.abs(document.querySelector('[aria-label="Playback position"]').valueAsNumber - ${time}) < 0.01`;
+      return until(async () => {
+        if (!(await evaluate(main, settled))) return false;
+        await nextFrame(main);
+        return evaluate(main, settled);
+      }, `the playhead at ${time}`);
+    };
     const frames = () => exported().filter((name: string) => name.endsWith(".png"));
     const pngSize = (buffer: Buffer) => [buffer.readUInt32BE(16), buffer.readUInt32BE(20)];
     const rawFrame = (file: string) =>
@@ -745,17 +724,10 @@ app.whenReady().then(async () => {
       [3, "the followed window"],
     ] as const) {
       await seekTo(time);
-      await until(
-        () =>
-          evaluate(
-            main,
-            `Math.abs(Number(document.querySelector('[aria-label="Playback position"]').value) - ${time}) < 0.01`,
-          ),
-        `the playhead at ${time}`,
-      );
-      await pause(500);
+      await playheadAt(time);
       const before = new Set(frames());
-      await evaluate(main, `${frameButton}.click()`);
+      // The button stays disabled until the last frame is saved, so this also waits for that.
+      await click(main, frameButton);
       await until(
         () =>
           evaluate(
@@ -764,13 +736,18 @@ app.whenReady().then(async () => {
           ),
         "the frame menu",
       );
-      await evaluate(
+      await click(
         main,
-        `[...document.querySelectorAll('[role=menuitem]')].find(i => i.textContent.includes('Save frame')).click()`,
+        `[...document.querySelectorAll('[role=menuitem]')].find(i => i.textContent.includes('Save frame'))`,
       );
       await until(
         () => frames().some((name: string) => !before.has(name)),
         `the frame at ${time}s to be saved`,
+      );
+      // The file shows up as it's written; the button is enabled again once it's finished.
+      await until(
+        () => evaluate(main, `!${frameButton}.disabled`),
+        `the frame at ${time}s to finish`,
       );
       const saved = frames().filter((name: string) => !before.has(name));
       assert.equal(saved.length, 1);
@@ -819,7 +796,9 @@ app.whenReady().then(async () => {
     // Copying puts the same kind of image on the clipboard, and the shortcut does it too.
     clipboard.clear();
     await seekTo(0.5);
-    await pause(500);
+    await playheadAt(0.5);
+    // The shortcut is ignored while a frame is still being saved, which the button shows by being disabled.
+    await until(() => evaluate(main, `!${frameButton}.disabled`), "the last frame to be saved");
     await evaluate(
       main,
       `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyC', metaKey: true, shiftKey: true, bubbles: true }))`,

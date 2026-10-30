@@ -6,6 +6,13 @@ import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  evaluate,
+  eventually,
+  reload,
+  screenshot,
+  until,
+} from "../../../../../tests/support/integration.ts";
 
 const data = mkdtempSync(join(tmpdir(), "chord-clip-background-test-"));
 app.setPath("userData", data);
@@ -94,14 +101,6 @@ function recording(name: string, count: number) {
   };
 }
 const recordings = [{ ...recording("one", 1), backdrop: "gradient" }];
-const evaluate = (win: BrowserWindow, code: string) => win.webContents.executeJavaScript(code);
-async function until(check: () => unknown | Promise<unknown>, label: string) {
-  for (let attempt = 0; attempt < 300; attempt++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`Timed out waiting for ${label}`);
-}
 
 app.whenReady().then(async () => {
   try {
@@ -119,14 +118,7 @@ app.whenReady().then(async () => {
     main.webContents.on("console-message", (event) => {
       if (event.level === "error") console.error("Renderer:", event.message);
     });
-    const run = async (code: string) => {
-      try {
-        return await evaluate(main, code);
-      } catch (error) {
-        console.error("Failed evaluation:", code);
-        throw error;
-      }
-    };
+    const run = (code: string) => evaluate(main, code);
     await until(() => run('!!document.querySelector("[aria-label=Settings]")'), "home");
     const setup = await run("window.chord.desktop.getState().then(state => state.defaults)");
     const now = new Date().toISOString();
@@ -147,7 +139,7 @@ app.whenReady().then(async () => {
       `window.chord.desktop.projects.load().then(() => window.chord.desktop.projects.put([${JSON.stringify(project)}]))`,
     );
     async function open() {
-      main.webContents.reload();
+      await reload(main);
       await until(() => run('!!document.querySelector("[data-projects] button")'), "project card");
       // Pixel assertions read the canvas repeatedly. Keep one raster backend instead of letting Chromium switch
       // from GPU to CPU after readbacks, which changes antialiasing even when video time hasn't moved.
@@ -264,10 +256,14 @@ app.whenReady().then(async () => {
     );
     await input("Padding", 12);
     await seek(0.5);
-    assert.deepEqual(
-      await pixel(0.01, 0.5),
-      [0, 0, 0, 255],
-      "An unspecified clip background is black even over a recording gradient",
+    await eventually(
+      async () =>
+        assert.deepEqual(
+          await pixel(0.01, 0.5),
+          [0, 0, 0, 255],
+          "An unspecified clip background is black even over a recording gradient",
+        ),
+      "the padded clip on black",
     );
     await choose("Single colour");
     await input("Background colour", "#ffffff");
@@ -278,11 +274,18 @@ app.whenReady().then(async () => {
     assert.equal((await saved())[1].layout, undefined, "Only the selected occurrence changes");
     assert.ok((await pixel(0.5, 0.5))[0] > 200, "The video remains visible");
     await choose("Floating blocks");
-    await until(async () => {
+    // The canvas is drawn a frame or two after the change, and only the drawn wallpaper is still from one frame to
+    // the next.
+    const first = await until(async () => {
       const shown = await strip();
-      return shown.brightest >= 40 && shown.brightest < 140;
+      await frames();
+      return (
+        shown.brightest >= 40 &&
+        shown.brightest < 140 &&
+        JSON.stringify(await strip()) === JSON.stringify(shown) &&
+        shown
+      );
     }, "visible wallpaper");
-    const first = await strip();
     assert.ok(
       first.visible > 0.005,
       "The pattern has readable outlines across the exposed background",
@@ -291,9 +294,16 @@ app.whenReady().then(async () => {
     await frames();
     assert.deepEqual(await strip(), first, "Animation stays still while paused");
     await seek(1.5);
-    assert.notEqual((await strip()).hash, first.hash, "Animation follows video time");
+    await eventually(
+      async () => assert.notEqual((await strip()).hash, first.hash, "Animation follows video time"),
+      "the wallpaper at 1.5s",
+    );
     await seek(0.5);
-    assert.deepEqual(await strip(), first, "Seeking back reproduces the same wallpaper");
+    await eventually(
+      async () =>
+        assert.deepEqual(await strip(), first, "Seeking back reproduces the same wallpaper"),
+      "the wallpaper at 0.5s",
+    );
     await select("b");
     await choose("Floating blocks");
     await until(
@@ -301,9 +311,13 @@ app.whenReady().then(async () => {
       "wallpaper margin on an unpadded clip",
     );
     await seek(2.5);
-    assert.ok(
-      (await strip()).visible > 0.005,
-      "A newly selected wallpaper is exposed without adjusting padding",
+    await eventually(
+      async () =>
+        assert.ok(
+          (await strip()).visible > 0.005,
+          "A newly selected wallpaper is exposed without adjusting padding",
+        ),
+      "the wallpaper on the second clip",
     );
     await input("Padding", 12);
     await choose("Single colour");
@@ -315,7 +329,10 @@ app.whenReady().then(async () => {
     // Compare with the same clip selected, as an open inspector narrows the player on small windows.
     await select("a");
     await seek(0.5);
-    assert.deepEqual(await strip(), first, "Wallpaper survives reloading");
+    await eventually(
+      async () => assert.deepEqual(await strip(), first, "Wallpaper survives reloading"),
+      "the wallpaper after reloading",
+    );
     await select("a");
     await choose("Single colour");
     await until(
@@ -324,13 +341,7 @@ app.whenReady().then(async () => {
     );
     await choose("Floating blocks");
     await frames();
-    if (process.env.CHORD_TEST_SCREENSHOTS) {
-      mkdirSync(process.env.CHORD_TEST_SCREENSHOTS, { recursive: true });
-      writeFileSync(
-        join(process.env.CHORD_TEST_SCREENSHOTS, "clip-background.png"),
-        (await main.webContents.capturePage()).toPNG(),
-      );
-    }
+    await screenshot(main, "clip-background");
 
     await run(
       `[...document.querySelectorAll('header button')].find(b => b.textContent.trim() === 'Export').click()`,
