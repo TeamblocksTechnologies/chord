@@ -1,0 +1,9 @@
+name: Chord CodeQL configuration
+
+# Scan the code that ships in the app. Tests and developer tooling only handle our own fixtures and
+# never take outside input, so their alerts would be noise.
+paths-ignore:
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/*.test.ts"
+  - apps/desktop/scripts/**
