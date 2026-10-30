@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// One recording: a folder of segment files plus `session.json`.
 /// Pausing is a hard stop of every track; resuming starts new segments. Sleep, screen lock, and lost devices
@@ -25,12 +26,18 @@ public actor RecordingSession {
     private let restoreInterval: Duration
     private let stopDrain: Duration
     private let emit: @Sendable (Event) async -> Void
-    private let signals: AsyncStream<TrackSignal>
-    private let signalSink: AsyncStream<TrackSignal>.Continuation
+    /// Each signal with the screen mode as it was sent, since signals are applied a little later.
+    private let signals: AsyncStream<(TrackSignal, ScreenMode?)>
+    private let signalSink: AsyncStream<(TrackSignal, ScreenMode?)>.Continuation
     private var signalTask: Task<Void, Never>?
     private var restoreTask: Task<Void, Never>?
     private var manifest: Manifest
-    private var screenMode: ScreenMode?
+    /// Locked so tracks' signals can read it as they're sent.
+    private let currentScreenMode: OSAllocatedUnfairLock<ScreenMode?>
+    private var screenMode: ScreenMode? {
+        get { currentScreenMode.withLock { $0 } }
+        set { currentScreenMode.withLock { $0 = newValue } }
+    }
     private var boundsFiles: [String: FileHandle] = [:]
     private let input: InputRecorder?
     private var asleep = false
@@ -54,10 +61,11 @@ public actor RecordingSession {
             .appending(path: id, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let (signals, signalSink) = AsyncStream.makeStream(of: TrackSignal.self)
+        let currentScreenMode = OSAllocatedUnfairLock(initialState: config.screen?.mode)
+        let (signals, signalSink) = AsyncStream.makeStream(of: (TrackSignal, ScreenMode?).self)
         let context = TrackContext(
             directory: directory, clock: clock, levels: levels, ids: TrackIds(), adopt: adopt,
-            signal: { signalSink.yield($0) }
+            signal: { signal in signalSink.yield((signal, currentScreenMode.withLock { $0 })) }
         )
         let tracks: [any RecordingTrack]
         do {
@@ -90,7 +98,7 @@ public actor RecordingSession {
         self.signalSink = signalSink
         let origin = clock.now()
         self.origin = origin
-        screenMode = config.screen?.mode
+        self.currentScreenMode = currentScreenMode
         input = readInput.map {
             InputRecorder(
                 directory: directory, read: $0, interval: inputInterval,
@@ -114,7 +122,9 @@ public actor RecordingSession {
     public func start() async throws -> SessionInfo {
         guard state == .idle else { throw HelperError(.invalidState, "session already started") }
         signalTask = Task { [signals] in
-            for await signal in signals { await self.apply(signal) }
+            for await (signal, screenMode) in signals {
+                await self.apply(signal, screenMode: screenMode)
+            }
         }
         state = .recording
         persist()
@@ -395,7 +405,8 @@ public actor RecordingSession {
 
     // MARK: Private
 
-    private func apply(_ signal: TrackSignal) async {
+    /// `screenMode`: the session's when the track sent `signal`, which a segment starting then records with.
+    private func apply(_ signal: TrackSignal, screenMode: ScreenMode?) async {
         switch signal {
         case .started(let trackId, let file, let hostTime):
             let start = hostTime - origin
