@@ -17,8 +17,47 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      languages: ${{ steps.languages.outputs.languages }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Find the changed parts of the repository
+        id: areas
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: .github/scripts/changed-areas.sh
+      # Pull requests analyze only the languages they change. Everything else analyzes all of them.
+      - name: Pick the languages to analyze
+        id: languages
+        env:
+          FULL: ${{ steps.areas.outputs.full }}
+          APP: ${{ steps.areas.outputs.app }}
+          NATIVE: ${{ steps.areas.outputs.native }}
+        run: |
+          languages=""
+          add() { languages="${languages:+$languages,}$1"; }
+          if [ "$FULL" = true ]; then
+            add '{"language":"actions","build-mode":"none","runner":"ubuntu-24.04"}'
+          fi
+          if [ "$FULL" = true ] || [ "$APP" = true ]; then
+            add '{"language":"javascript-typescript","build-mode":"none","runner":"ubuntu-24.04"}'
+          fi
+          if [ "$FULL" = true ] || [ "$NATIVE" = true ]; then
+            add '{"language":"swift","build-mode":"manual","runner":"macos-26"}'
+          fi
+          echo "languages=[$languages]" | tee -a "$GITHUB_OUTPUT"
+
   analyze:
     name: Analyze (${{ matrix.language }})
+    needs: changes
+    if: ${{ needs.changes.outputs.languages != '[]' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     permissions:
@@ -28,16 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - language: actions
-            build-mode: none
-            runner: ubuntu-24.04
-          - language: javascript-typescript
-            build-mode: none
-            runner: ubuntu-24.04
-          - language: swift
-            build-mode: manual
-            runner: macos-26
+        include: ${{ fromJSON(needs.changes.outputs.languages) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,6 +78,11 @@ jobs:
           XCODE_VERSION="$(cat .xcode-version)"
           sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
           swift --version
+      # Build FluidAudio before CodeQL starts tracing, so only Chord's own Swift is extracted and
+      # analyzed. Debug skips optimization, which the analysis doesn't need.
+      - name: Build Swift dependencies outside the analysis
+        if: ${{ matrix.language == 'swift' }}
+        run: swift build --package-path native/macos --target FluidAudio --force-resolved-versions
       - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: ${{ matrix.language }}
@@ -55,7 +90,7 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
       - name: Build the native helpers
         if: ${{ matrix.language == 'swift' }}
-        run: swift build --package-path native/macos -c release --force-resolved-versions
+        run: swift build --package-path native/macos --force-resolved-versions
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: /language:${{ matrix.language }}
