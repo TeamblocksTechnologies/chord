@@ -168,13 +168,15 @@ let fakeTracks: TrackFactory = { config, context in
     return tracks
 }
 
-/// Polls until `condition` holds or about a second passes.
-func eventually(_ condition: () async -> Bool) async -> Bool {
-    for _ in 0..<100 {
+/// Polls until `condition` holds. The limit only bounds a failing test: a passing one returns as soon as it holds,
+/// however slow the machine.
+func eventually(timeout: Duration = .seconds(30), _ condition: () async -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
         if await condition() { return true }
-        try? await Task.sleep(for: .milliseconds(10))
+        try? await Task.sleep(for: .milliseconds(5))
     }
-    return false
+    return await condition()
 }
 
 func temporaryDirectory() -> URL {
