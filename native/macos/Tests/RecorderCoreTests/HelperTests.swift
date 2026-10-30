@@ -20,8 +20,12 @@ private let fakeMeters: AudioMeterFactory = { source, update in
     return FakeMeter()
 }
 
-/// Feeds `lines` to a helper, then waits `linger` before closing stdin.
-private func run(_ lines: [String], linger: Duration = .zero) async -> [Outgoing] {
+/// Feeds `lines` to a helper, waits until its output satisfies `until`, then waits `linger` before
+/// closing stdin. Waiting on output first keeps slow machines from closing stdin too early.
+private func run(
+    _ lines: [String], until: @escaping @Sendable ([Outgoing]) -> Bool = { _ in true },
+    linger: Duration = .zero
+) async -> [Outgoing] {
     let collector = Collector<Outgoing>()
     let helper = Helper(
         send: { await collector.add($0) },
@@ -36,11 +40,16 @@ private func run(_ lines: [String], linger: Duration = .zero) async -> [Outgoing
         continuation.yield(line)
     }
     Task {
+        await waitUntil { until(await collector.items) }
         try? await Task.sleep(for: linger)
         continuation.finish()
     }
     await helper.run(lines: input)
     return await collector.items
+}
+
+private func responded(to id: RequestID) -> @Sendable ([Outgoing]) -> Bool {
+    { output in output.contains { if case .response(id, _) = $0 { true } else { false } } }
 }
 
 private func levels(in output: [Outgoing]) -> [[TrackLevel]] {
@@ -117,7 +126,7 @@ private func waitUntil(timeout: Duration = .seconds(2), _ condition: () async ->
     defer { try? FileManager.default.removeItem(at: output) }
     let start =
         #"{"jsonrpc":"2.0","id":1,"method":"startSession","params":{"outputDirectory":"\#(output.path)"}}"#
-    let out = await run([start], linger: .milliseconds(100))
+    let out = await run([start], until: responded(to: 1), linger: .milliseconds(100))
     #expect(levels(in: out).isEmpty)
 }
 
@@ -129,7 +138,7 @@ private func waitUntil(timeout: Duration = .seconds(2), _ condition: () async ->
             #"{"jsonrpc":"2.0","id":1,"method":"startSession","params":{"outputDirectory":"\#(output.path)"}}"#,
             #"{"jsonrpc":"2.0","id":2,"method":"setMetering","params":{"enabled":true}}"#,
         ],
-        linger: .milliseconds(100)
+        until: { !levels(in: $0).isEmpty }
     )
     let batches = levels(in: out)
     #expect(!batches.isEmpty)
@@ -146,7 +155,7 @@ private func previewLevels(in output: [Outgoing]) -> [[AudioSourceLevel]] {
         [
             #"{"jsonrpc":"2.0","id":1,"method":"setAudioPreview","params":{"sources":[{"kind":"microphone","deviceId":"a"}]}}"#
         ],
-        linger: .milliseconds(100)
+        until: { !previewLevels(in: $0).isEmpty }
     )
     #expect(out.contains(.response(id: 1, result: .audioPreview(failures: []))))
     let batches = previewLevels(in: out)
@@ -164,6 +173,7 @@ private func previewLevels(in output: [Outgoing]) -> [[AudioSourceLevel]] {
         [
             #"{"jsonrpc":"2.0","id":1,"method":"setAudioPreview","params":{"sources":[{"kind":"microphone","deviceId":"missing"},{"kind":"systemAudio"}]}}"#
         ],
+        until: responded(to: 1),
         linger: .milliseconds(50)
     )
     #expect(
