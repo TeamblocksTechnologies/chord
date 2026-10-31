@@ -1,6 +1,6 @@
 <script lang="ts">
   // The shared quality presets. Custom shows while the sources in view have their own settings.
-  import { QUALITY_PRESETS, type QualityPreset } from "../../domain/quality.ts";
+  import { QUALITY_PRESETS, type QualityPreset } from "#ui/model/quality.ts";
 
   let {
     value,

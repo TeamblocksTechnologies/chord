@@ -19,7 +19,7 @@ const sources = {
   "lib/playback/cutEditor.svelte.ts":
     "../../src/features/editing/renderer/transcript/cutEditor.svelte.ts",
   "lib/liveList.svelte.ts": "../../src/shared/renderer/liveList.svelte.ts",
-  "lib/paintSelection.ts": "../../src/shared/renderer/paintSelection.ts",
+  "lib/paintSelection.ts": "@teamblocks.dev/chord-ui/paintSelection",
   "lib/pointerDrag.ts": "@teamblocks.dev/chord-ui/pointerDrag",
   "components/ConfirmDialog.svelte": "@teamblocks.dev/chord-ui/ConfirmDialog.svelte",
   "components/SliderField.svelte": "@teamblocks.dev/chord-ui/SliderField.svelte",

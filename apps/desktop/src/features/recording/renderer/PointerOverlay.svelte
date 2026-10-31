@@ -22,7 +22,7 @@
     drawHold,
     drawRipple,
     drawTrail,
-  } from "#shared/renderer/pointerStyle";
+  } from "@teamblocks.dev/chord-ui/pointer/pointerStyle";
 
   let canvas = $state<HTMLCanvasElement>();
   let shortcuts = $state<ShortcutPress[]>([]);

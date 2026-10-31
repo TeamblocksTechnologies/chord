@@ -1,28 +1,29 @@
 <script lang="ts">
   // Everything about the screen, inside one popup. Apps, pinned windows, and quality drill in rather than sitting beside the rest.
   // While the screen is off its settings stay, dimmed; picking a mode or display switches it back on.
-  import { desktop, updatePreferences } from "#platform/renderer/desktop.svelte";
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import { excludedApps } from "#features/settings/domain/preferences";
-  import AppAccess from "../AppAccess.svelte";
+  import { excludedApps, type RecordingSetup } from "#ui/model/setup.ts";
+  import AppAccess from "./AppAccess.svelte";
   import AreaItems from "./AreaItems.svelte";
   import BackgroundRow from "./BackgroundRow.svelte";
-  import FocusedWindowPreview from "../FocusedWindowPreview.svelte";
   import DrillBack from "./DrillBack.svelte";
   import DrillRow from "./DrillRow.svelte";
   import ModeSwitch from "./ModeSwitch.svelte";
   import PinnedWindows from "./PinnedWindows.svelte";
-  import Toggle from "@teamblocks.dev/chord-ui/Toggle.svelte";
+  import Toggle from "#ui/Toggle.svelte";
   import QualityRow from "./QualityRow.svelte";
   import ScreenItems from "./ScreenItems.svelte";
   import ScreenQuality from "./ScreenQuality.svelte";
-  import { appSummary, pinnedSummary, qualityLabel } from "./shared.ts";
+  import { appSummary, pinnedSummary, qualityLabel } from "./controls.ts";
+  import { recordingEnvironment } from "./environment.ts";
 
   let { setup }: { setup: RecordingSetup } = $props();
 
+  const environment = recordingEnvironment();
+  const FocusedWindowPreview = environment.previews.focusedWindow;
+
   // The popup renders only while open, so this resets to the main view each time.
   let view = $state<"main" | "apps" | "pinned" | "quality">("main");
-  let alwaysHidden = $derived(desktop.preferences.hiddenApps);
+  let alwaysHidden = $derived(environment.preferences.hiddenApps);
   let apps = $derived(appSummary(setup, alwaysHidden));
   let hiddenApps = $derived(excludedApps(setup.hiddenApps, alwaysHidden));
 </script>
@@ -84,8 +85,8 @@
       <Toggle
         label="Hide mouse cursor"
         bind:checked={
-          () => !desktop.preferences.showsCursor,
-          (hide) => updatePreferences({ showsCursor: !hide })
+          () => !environment.preferences.showsCursor,
+          (hide) => environment.updatePreferences({ showsCursor: !hide })
         }
       />
     </QualityRow>

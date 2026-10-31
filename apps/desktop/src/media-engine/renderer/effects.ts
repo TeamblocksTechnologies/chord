@@ -18,9 +18,10 @@ import {
   circle,
   drawHold,
   drawRipple,
+  drawShortcuts,
   drawTrail,
   type TrailPoint,
-} from "#shared/renderer/pointerStyle";
+} from "@teamblocks.dev/chord-ui/pointer/pointerStyle";
 import { cursorAt as followedAt, drawCursor } from "./cursor.ts";
 import type { PlaybackInput } from "./timeline.ts";
 
@@ -42,9 +43,6 @@ export interface EffectOptions {
 }
 
 /** How long a shortcut takes to come in and go, in seconds. */
-const SHORTCUT_IN = 0.2;
-const SHORTCUT_OUT = 0.26;
-
 /** One independent annotation layer, drawn at its place in the visual stack. */
 export function drawEffect(
   context: CanvasRenderingContext2D,
@@ -124,53 +122,6 @@ export function drawEffect(
       age: time - key.time,
     })),
   );
-}
-
-/** Shortcuts as key caps in translucent pills, newest at the bottom, sized to the canvas. */
-function drawShortcuts(
-  context: CanvasRenderingContext2D,
-  shortcuts: { parts: string[]; age: number }[],
-): void {
-  const { width, height } = context.canvas;
-  const size = Math.max(height / 26, 10);
-  const pad = { x: size * 0.66, y: size * 0.42 };
-  const cap = { x: size * 0.42, y: size * 0.18, gap: size * 0.25 };
-  const capHeight = size + 2 * cap.y;
-  const pillHeight = capHeight + 2 * pad.y;
-  context.font = `500 ${size}px "DM Sans Variable", ui-sans-serif, system-ui, sans-serif`;
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  let bottom = height - height * 0.07;
-  shortcuts.reverse().forEach(({ parts, age }, i) => {
-    if (parts.length === 0) return;
-    const comeIn = Math.min(age / SHORTCUT_IN, 1);
-    const go = Math.min((SHORTCUT_TIME / 1000 - age) / SHORTCUT_OUT, 1);
-    const eased = 1 - (1 - comeIn) ** 3;
-    context.globalAlpha = Math.max(0, Math.min(comeIn, go)) * (i === 0 ? 1 : 0.55);
-    const widths = parts.map((part) =>
-      Math.max(context.measureText(part).width + 2 * cap.x, size * 1.5),
-    );
-    const pillWidth =
-      widths.reduce((total, w) => total + w, 0) + cap.gap * (parts.length - 1) + 2 * pad.x;
-    const top = bottom - pillHeight + (1 - eased) * size;
-    let x = (width - pillWidth) / 2;
-    context.fillStyle = "rgb(0 0 0 / 0.5)";
-    context.beginPath();
-    context.roundRect(x, top, pillWidth, pillHeight, size * 0.66);
-    context.fill();
-    x += pad.x;
-    parts.forEach((part, k) => {
-      context.fillStyle = "rgb(255 255 255 / 0.15)";
-      context.beginPath();
-      context.roundRect(x, top + pad.y, widths[k]!, capHeight, size * 0.33);
-      context.fill();
-      context.fillStyle = "white";
-      context.fillText(part, x + widths[k]! / 2, top + pad.y + capHeight / 2);
-      x += widths[k]! + cap.gap;
-    });
-    bottom = top - size * 0.33;
-  });
-  context.globalAlpha = 1;
 }
 
 /** The index of the last sample at or before `time`, or -1. Samples are in time order. */

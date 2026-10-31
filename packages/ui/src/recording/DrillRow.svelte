@@ -1,6 +1,6 @@
 <script lang="ts">
   // A popup row that opens a nested view.
-  import Icon, { type IconName } from "@teamblocks.dev/chord-ui/Icon.svelte";
+  import Icon, { type IconName } from "#ui/Icon.svelte";
 
   let {
     icon,

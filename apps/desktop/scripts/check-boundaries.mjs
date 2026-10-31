@@ -11,6 +11,8 @@ const builtins = new Set(builtinModules.map((name) => name.replace(/^node:/, "")
 const inside = (file, directory) => file === directory || file.startsWith(directory + sep);
 
 export function location(file) {
+  // The UI package's model is framework-free, so domain code can share it.
+  if (inside(file, resolve(ui, "src/model"))) return { owner: "ui", runtime: "domain" };
   if (inside(file, ui)) return { owner: "ui", runtime: "renderer" };
   const parts = relative(resolve(desktop, "src"), file).split(sep);
   return parts[0] === "features"
@@ -102,7 +104,8 @@ export function checkImport(file, specifier, { imports, exports: uiExports, uiIm
     pure &&
     (specifier === "svelte" ||
       specifier.startsWith("svelte/") ||
-      specifier.startsWith("@teamblocks.dev/chord-ui/"))
+      (specifier.startsWith("@teamblocks.dev/chord-ui/") &&
+        !specifier.startsWith("@teamblocks.dev/chord-ui/model/")))
   ) {
     errors.push("domain and contracts must be independent of the UI framework");
   }

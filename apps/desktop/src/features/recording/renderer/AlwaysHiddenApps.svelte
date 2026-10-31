@@ -2,8 +2,8 @@
   // Settings' list of apps hidden from every recording: every app, open or not, in one list, picked by hand. Dragging
   // across tiles sets each one passed over the way the first one went.
   import { allApps, filterApps, observeAppCatalogue } from "./apps.svelte.ts";
-  import { PaintSelection } from "#shared/renderer/paintSelection";
-  import AppTile from "./AppTile.svelte";
+  import { PaintSelection } from "@teamblocks.dev/chord-ui/paintSelection";
+  import AppTile from "@teamblocks.dev/chord-ui/recording/AppTile.svelte";
   import Icon from "@teamblocks.dev/chord-ui/Icon.svelte";
 
   let { hidden, onchange }: { hidden: string[]; onchange: (hidden: string[]) => void } = $props();

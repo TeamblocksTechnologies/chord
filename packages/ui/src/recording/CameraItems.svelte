@@ -1,18 +1,19 @@
 <script lang="ts">
   // Cameras stay dimmed and unpreviewed while off. Selecting a device switches them on; deselecting keeps their power state.
-  import { resolveCamera } from "../../domain/quality.ts";
-  import { desktop } from "#platform/renderer/desktop.svelte";
-  import { cameraPreview } from "../preview.ts";
-  import { sources } from "../sources.svelte.ts";
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import MenuItem from "@teamblocks.dev/chord-ui/MenuItem.svelte";
-  import VideoPreview from "../VideoPreview.svelte";
+  import { resolveCamera } from "#ui/model/quality.ts";
+  import type { RecordingSetup } from "#ui/model/setup.ts";
+  import MenuItem from "#ui/MenuItem.svelte";
   import CameraQuality from "./CameraQuality.svelte";
   import DrillBack from "./DrillBack.svelte";
   import DrillRow from "./DrillRow.svelte";
-  import { primaryCamera, qualityLabel, selectedCameras, toggled } from "./shared.ts";
+  import { primaryCamera, qualityLabel, selectedCameras, toggled } from "./controls.ts";
+  import { recordingEnvironment } from "./environment.ts";
 
   let { setup }: { setup: RecordingSetup } = $props();
+
+  const environment = recordingEnvironment();
+  const { sources } = environment;
+  const CameraPreview = environment.previews.camera;
 
   // The popup renders only while open, so this resets to the device list each time.
   let view = $state<"main" | "quality" | "preview">("main");
@@ -51,11 +52,7 @@
         {#snippet preview()}
           {#if setup.cameraEnabled}
             {@const size = resolveCamera(camera, setup.quality, setup.cameraQuality[camera.id])}
-            <VideoPreview
-              open={cameraPreview(camera, size)}
-              aspect={size ? size.width / size.height : undefined}
-              mirrored={desktop.preferences.cameraMirrored}
-            />
+            <CameraPreview {camera} {size} mirrored={environment.preferences.cameraMirrored} />
           {/if}
         {/snippet}
       </MenuItem>

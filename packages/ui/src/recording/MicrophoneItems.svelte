@@ -1,12 +1,14 @@
 <script lang="ts">
   // Microphones stay dimmed and unmetered while off. Selecting a device switches them on; deselecting keeps their power state.
-  import { sources } from "../sources.svelte.ts";
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import LevelMeter from "../LevelMeter.svelte";
-  import MenuItem from "@teamblocks.dev/chord-ui/MenuItem.svelte";
-  import { toggled } from "./shared.ts";
+  import type { RecordingSetup } from "#ui/model/setup.ts";
+  import MenuItem from "#ui/MenuItem.svelte";
+  import { toggled } from "./controls.ts";
+  import { recordingEnvironment } from "./environment.ts";
 
   let { setup }: { setup: RecordingSetup } = $props();
+
+  const { sources, previews } = recordingEnvironment();
+  const LevelMeter = previews.level;
 </script>
 
 <div class={["transition-opacity", !setup.microphoneEnabled && "opacity-50"]}>

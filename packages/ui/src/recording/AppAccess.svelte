@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { listApps, filterApps, observeAppCatalogue, type AppEntry } from "./apps.svelte.ts";
-  import { PaintSelection } from "#shared/renderer/paintSelection";
+  import Icon from "#ui/Icon.svelte";
+  import { PaintSelection } from "#ui/paintSelection.ts";
   import AppTile from "./AppTile.svelte";
-  import Icon from "@teamblocks.dev/chord-ui/Icon.svelte";
+  import { filterApps } from "./controls.ts";
+  import { recordingEnvironment, type AppEntry } from "./environment.ts";
 
   let {
     hidden,
@@ -16,12 +17,13 @@
     exclude?: string[];
   } = $props();
 
+  const catalogue = recordingEnvironment().apps;
   let query = $state("");
-  observeAppCatalogue();
+  catalogue.observe();
   const painting = new PaintSelection((id) => !hidden.includes(id), setRecorded);
 
   let apps = $derived.by(() => {
-    const { open, closed } = listApps(hidden);
+    const { open, closed } = catalogue.list(hidden);
     const shown = (app: AppEntry) => !exclude.includes(app.bundleId);
     return { open: open.filter(shown), closed: closed.filter(shown) };
   });

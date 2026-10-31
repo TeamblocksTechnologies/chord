@@ -1,8 +1,8 @@
 <script lang="ts">
   // One app in an app grid: its icon (or initials), a badge in the corner, and its name.
   import type { HTMLButtonAttributes } from "svelte/elements";
-  import { appIcons, iconsSettled, type AppEntry } from "./apps.svelte.ts";
-  import Icon from "@teamblocks.dev/chord-ui/Icon.svelte";
+  import Icon from "#ui/Icon.svelte";
+  import { recordingEnvironment, type AppEntry } from "./environment.ts";
 
   let {
     app,
@@ -23,7 +23,8 @@
     badge: "check" | "eyeOff" | null;
   } = $props();
 
-  let icon = $derived(appIcons[app.bundleId]);
+  const catalogue = recordingEnvironment().apps;
+  let icon = $derived(catalogue.icons[app.bundleId]);
 
   function monogram(name: string): string {
     return name
@@ -55,7 +56,7 @@
     >
       {#if icon}
         <img src={icon} alt="" class="size-full" draggable="false" />
-      {:else if !iconsSettled[app.bundleId]}
+      {:else if !catalogue.settled[app.bundleId]}
         <span
           class={["skeleton rounded-lg", compact ? "size-6" : "size-8"]}
           role="status"

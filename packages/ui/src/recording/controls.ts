@@ -1,10 +1,5 @@
 /** State helpers for the recording controls. */
-import type {
-  CameraSource,
-  DeviceSource,
-  ScreenArea,
-  WindowSource,
-} from "@teamblocks.dev/chord-recorder-protocol";
+import type { IconName } from "#ui/Icon.svelte";
 import {
   cameraPreset,
   frameRates,
@@ -15,12 +10,25 @@ import {
   type CameraQuality,
   type QualityPreset,
   type ScreenQuality,
-} from "../../domain/quality.ts";
-import { activeAreas, activeCameraIds } from "#project-document/domain/recording";
-import { listApps } from "../apps.svelte.ts";
-import { defaultDevice, findDevices, findDisplays, sources } from "../sources.svelte.ts";
-import type { CaptureMode, RecordingSetup } from "#project-document/domain/recording";
-import type { IconName } from "@teamblocks.dev/chord-ui/Icon.svelte";
+} from "#ui/model/quality.ts";
+import {
+  activeAreas,
+  activeCameraIds,
+  type CaptureMode,
+  type RecordingSetup,
+} from "#ui/model/setup.ts";
+import {
+  defaultDevice,
+  findDevices,
+  findDisplays,
+  type CameraSource,
+  type DeviceSource,
+  type ScreenArea,
+  type WindowSource,
+} from "#ui/model/sources.ts";
+import { recordingEnvironment } from "./environment.ts";
+
+const sources = () => recordingEnvironment().sources;
 
 export const modes: { mode: CaptureMode; icon: IconName; label: string; short: string }[] = [
   { mode: "window", icon: "window", label: "Focused window", short: "Windows" },
@@ -37,7 +45,7 @@ export function toggled<T>(ids: T[], id: T): T[] {
  * its displays are kept, and picking one of them just switches it back on.
  */
 export function toggleDisplay(setup: RecordingSetup, id: number) {
-  const current = findDisplays(setup.displayIds).map((d) => d.id);
+  const current = findDisplays(sources().displays, setup.displayIds).map((d) => d.id);
   if (!setup.recordsScreen && current.includes(id)) {
     setup.recordsScreen = true;
     return;
@@ -45,12 +53,12 @@ export function toggleDisplay(setup: RecordingSetup, id: number) {
   const next = toggled(current, id);
   setup.recordsScreen = next.length > 0;
   setup.displayIds =
-    next.length === 1 && sources.displays.find((d) => d.id === next[0])?.isMain ? [] : next;
+    next.length === 1 && sources().displays.find((d) => d.id === next[0])?.isMain ? [] : next;
 }
 
 /** The open windows a setup pins, front to back. Ones that have closed are left out. */
 export function pinnedWindowSources(setup: RecordingSetup): WindowSource[] {
-  return sources.windows.filter((w) => setup.pinnedWindowIds.includes(w.id));
+  return sources().windows.filter((w) => setup.pinnedWindowIds.includes(w.id));
 }
 
 /** Pins or unpins a window, forgetting pinned windows that have closed. Pinning switches the screen on. */
@@ -114,31 +122,37 @@ export async function toggleAreaDisplay(setup: RecordingSetup, displayId: number
   }
 }
 
-function pickAreas(setup: RecordingSetup) {
+async function pickAreas(setup: RecordingSetup): Promise<ScreenArea[] | null> {
+  const pick = recordingEnvironment().pickAreas;
   // Plain copies: reactive proxies can't cross IPC.
-  return window.chord.desktop.pickAreas(setup.areas.map((area) => ({ ...area })));
+  return pick ? pick(setup.areas.map((area) => ({ ...area }))) : null;
+}
+
+/** Whether areas can be drawn here; without a picker, only the areas a setup already has can be switched. */
+export function canPickAreas(): boolean {
+  return !!recordingEnvironment().pickAreas;
 }
 
 /** The connected displays with an area switched on, in display order. */
 export function areaDisplays(setup: RecordingSetup) {
   const areas = activeAreas(setup);
-  return sources.displays.filter((d) => areas.some((a) => a.displayId === d.id));
+  return sources().displays.filter((d) => areas.some((a) => a.displayId === d.id));
 }
 
 /** What the screen is set to record, kept while it's off. */
 export function screenNames(setup: RecordingSetup): string[] {
   if (setup.mode === "window") return ["Focused window"];
-  const displays = findDisplays(setup.displayIds);
+  const displays = findDisplays(sources().displays, setup.displayIds);
   if (setup.mode === "area") return areaDisplays(setup).map((d) => d.name);
   return displays.length > 0 ? displays.map((d) => d.name) : ["Main display"];
 }
 
 export function cameraNames(setup: RecordingSetup): string[] {
-  return findDevices(sources.cameras, setup.cameraIds).map((c) => c.name);
+  return findDevices(sources().cameras, setup.cameraIds).map((c) => c.name);
 }
 
 export function microphoneNames(setup: RecordingSetup): string[] {
-  return findDevices(sources.microphones, setup.microphoneIds).map((m) => m.name);
+  return findDevices(sources().microphones, setup.microphoneIds).map((m) => m.name);
 }
 
 /** Summarizes which apps are blocked, leaving out the apps `alwaysHidden` keeps out of every recording. */
@@ -146,7 +160,7 @@ export function appSummary(
   setup: RecordingSetup,
   alwaysHidden: string[],
 ): { label: string; blocked: number; allowed: number } {
-  const lists = listApps(setup.hiddenApps);
+  const lists = recordingEnvironment().apps.list(setup.hiddenApps);
   const shown = (a: { bundleId: string }) => !alwaysHidden.includes(a.bundleId);
   const open = lists.open.filter(shown);
   const every = [...open, ...lists.closed.filter(shown)];
@@ -187,7 +201,7 @@ export function screenLabel(setup: RecordingSetup): string {
     return activeAreas(setup).length > 1 ? `${activeAreas(setup).length} areas` : "Area";
   return names.length > 1
     ? `${names.length} displays`
-    : sources.displays.length > 1
+    : sources().displays.length > 1
       ? names[0]
       : "Full display";
 }
@@ -241,7 +255,7 @@ export function choosePreset(
 
 /** The connected cameras a setup records. */
 export function selectedCameras(setup: RecordingSetup): CameraSource[] {
-  return sources.cameras.filter((c) => setup.cameraIds.includes(c.id));
+  return sources().cameras.filter((c) => setup.cameraIds.includes(c.id));
 }
 
 /**
@@ -249,7 +263,7 @@ export function selectedCameras(setup: RecordingSetup): CameraSource[] {
  * default among the recorded cameras, otherwise the first of them. Undefined when none is connected.
  */
 export function primaryCamera(setup: RecordingSetup): CameraSource | undefined {
-  const recorded = sources.cameras.filter((c) => activeCameraIds(setup).includes(c.id));
+  const recorded = sources().cameras.filter((c) => activeCameraIds(setup).includes(c.id));
   return (
     recorded.find((c) => c.id === setup.primaryCameraId) ??
     recorded.find((c) => c.isDefault) ??
@@ -260,4 +274,10 @@ export function primaryCamera(setup: RecordingSetup): CameraSource | undefined {
 /** The preset's name, or Custom when any of these sources has its own settings. */
 export function qualityLabel(setup: RecordingSetup, custom: boolean): string {
   return custom ? "Custom" : presetLabel(setup.quality);
+}
+
+/** Case-insensitive name matching, shared by the grouped and flat app pickers. */
+export function filterApps<T extends { name: string }>(apps: T[], query: string): T[] {
+  const needle = query.trim().toLowerCase();
+  return apps.filter((app) => app.name.toLowerCase().includes(needle));
 }

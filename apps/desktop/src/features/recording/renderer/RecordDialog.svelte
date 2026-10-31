@@ -5,8 +5,8 @@
   import { recordsAnything, recorder } from "./recorder.svelte.ts";
   import type { Project } from "#project-document/domain/recording";
   import PermissionsPanel from "./PermissionsPanel.svelte";
-  import RecordButton from "./RecordButton.svelte";
-  import RecordingControls from "./controls/RecordingControls.svelte";
+  import RecordButton from "@teamblocks.dev/chord-ui/recording/RecordButton.svelte";
+  import RecordingControls from "@teamblocks.dev/chord-ui/recording/RecordingControls.svelte";
 
   let { project, onclose }: { project: Project; onclose: () => void } = $props();
 

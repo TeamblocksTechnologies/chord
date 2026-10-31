@@ -6,8 +6,8 @@
   import type { ShortcutId } from "#features/settings/domain/shortcuts";
   import { ISLAND, islandSize, showsCamera } from "../contracts/island.ts";
   import Icon from "@teamblocks.dev/chord-ui/Icon.svelte";
-  import { primaryCamera } from "./controls/shared.ts";
-  import RecordingControls from "./controls/RecordingControls.svelte";
+  import { primaryCamera } from "@teamblocks.dev/chord-ui/recording/controls";
+  import RecordingControls from "@teamblocks.dev/chord-ui/recording/RecordingControls.svelte";
   import { desktop } from "#platform/renderer/desktop.svelte";
   import { formatDuration } from "#shared/domain/format";
   import { withShortcut } from "#features/settings/renderer/shortcuts.svelte";

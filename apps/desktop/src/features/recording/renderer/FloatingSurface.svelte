@@ -4,6 +4,7 @@
   import { onMount } from "svelte";
   import { connectDesktop } from "#platform/renderer/desktop.svelte";
   import { closeMenus, menus } from "@teamblocks.dev/chord-ui/menus.svelte";
+  import "./recordingEnvironment.ts";
   import FloatingToolbar from "./FloatingToolbar.svelte";
   import RecordingIsland from "./RecordingIsland.svelte";
 

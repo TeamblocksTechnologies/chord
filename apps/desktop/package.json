@@ -101,10 +101,9 @@
     "#features/recording/renderer/RecordingNotes.svelte": "./src/features/recording/renderer/RecordingNotes.svelte",
     "#features/recording/renderer/RecordingView.svelte": "./src/features/recording/renderer/RecordingView.svelte",
     "#features/recording/renderer/apps.svelte": "./src/features/recording/renderer/apps.svelte.ts",
-    "#features/recording/renderer/controls/RecordRow.svelte": "./src/features/recording/renderer/controls/RecordRow.svelte",
-    "#features/recording/renderer/controls/RecordingControls.svelte": "./src/features/recording/renderer/controls/RecordingControls.svelte",
     "#features/recording/renderer/recorder.svelte": "./src/features/recording/renderer/recorder.svelte.ts",
     "#features/recording/renderer/scroll.svelte": "./src/features/recording/renderer/scroll.svelte.ts",
+    "#features/recording/renderer/recordingEnvironment": "./src/features/recording/renderer/recordingEnvironment.ts",
     "#features/recording/renderer/sources.svelte": "./src/features/recording/renderer/sources.svelte.ts",
     "#features/recording/renderer/toolbar.svelte": "./src/features/recording/renderer/toolbar.svelte.ts",
     "#features/settings/contracts/api": "./src/features/settings/contracts/api.ts",
@@ -155,7 +154,6 @@
     "#platform/main/tasks": "./src/platform/main/tasks.ts",
     "#platform/main/windows": "./src/platform/main/windows.ts",
     "#platform/main/workerTask": "./src/platform/main/workerTask.ts",
-    "#platform/renderer/LogoMark.svelte": "./src/platform/renderer/LogoMark.svelte",
     "#platform/renderer/TopBar.svelte": "./src/platform/renderer/TopBar.svelte",
     "#platform/renderer/desktop.svelte": "./src/platform/renderer/desktop.svelte.ts",
     "#platform/renderer/helper": "./src/platform/renderer/helper.ts",
@@ -170,8 +168,6 @@
     "#shared/main/tar": "./src/shared/main/tar.ts",
     "#shared/main/wav": "./src/shared/main/wav.ts",
     "#shared/main/wavFile": "./src/shared/main/wavFile.ts",
-    "#shared/renderer/liveList.svelte": "./src/shared/renderer/liveList.svelte.ts",
-    "#shared/renderer/paintSelection": "./src/shared/renderer/paintSelection.ts",
-    "#shared/renderer/pointerStyle": "./src/shared/renderer/pointerStyle.ts"
+    "#shared/renderer/liveList.svelte": "./src/shared/renderer/liveList.svelte.ts"
   }
 }

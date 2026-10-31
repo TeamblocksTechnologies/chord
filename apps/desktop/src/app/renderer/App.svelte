@@ -2,6 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { projectStore } from "#project-document/renderer/projects.svelte";
   import { recorder } from "#features/recording/renderer/recorder.svelte";
+  import "#features/recording/renderer/recordingEnvironment";
   import { router } from "#platform/renderer/router.svelte";
   import { settings } from "#features/settings/renderer/settings.svelte";
   import Home from "#features/projects/renderer/Home.svelte";

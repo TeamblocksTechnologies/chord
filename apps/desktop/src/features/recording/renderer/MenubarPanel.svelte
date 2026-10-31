@@ -7,6 +7,7 @@
   import { closeMenus, menus } from "@teamblocks.dev/chord-ui/menus.svelte";
   import { projectStore } from "#project-document/renderer/projects.svelte";
   import { router } from "#platform/renderer/router.svelte";
+  import "./recordingEnvironment.ts";
   import { scrollState } from "./scroll.svelte.ts";
   import Home from "#features/projects/renderer/Home.svelte";
 

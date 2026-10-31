@@ -1,5 +1,5 @@
 <script lang="ts">
-  import LogoMark from "#platform/renderer/LogoMark.svelte";
+  import LogoMark from "#ui/LogoMark.svelte";
 
   let {
     label = "Record",

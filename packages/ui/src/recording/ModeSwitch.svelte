@@ -1,8 +1,8 @@
 <script lang="ts">
   // The three capture modes as a compact segmented control.
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import Icon from "@teamblocks.dev/chord-ui/Icon.svelte";
-  import { modes, setMode } from "./shared.ts";
+  import type { RecordingSetup } from "#ui/model/setup.ts";
+  import Icon from "#ui/Icon.svelte";
+  import { modes, setMode } from "./controls.ts";
 
   let { setup, class: className = "" }: { setup: RecordingSetup; class?: string } = $props();
 </script>

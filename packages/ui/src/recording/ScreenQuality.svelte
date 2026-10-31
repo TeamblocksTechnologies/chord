@@ -1,12 +1,12 @@
 <script lang="ts">
   // The screen's resolution, frame rate, and HDR, starting from the shared preset.
-  import { resolveScreen } from "../../domain/quality.ts";
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import Segmented from "@teamblocks.dev/chord-ui/Segmented.svelte";
-  import Toggle from "@teamblocks.dev/chord-ui/Toggle.svelte";
+  import { resolveScreen } from "#ui/model/quality.ts";
+  import type { RecordingSetup } from "#ui/model/setup.ts";
+  import Segmented from "#ui/Segmented.svelte";
+  import Toggle from "#ui/Toggle.svelte";
   import PresetSwitch from "./PresetSwitch.svelte";
   import QualityRow from "./QualityRow.svelte";
-  import { choosePreset, setScreenQuality } from "./shared.ts";
+  import { choosePreset, setScreenQuality } from "./controls.ts";
 
   let { setup }: { setup: RecordingSetup } = $props();
 

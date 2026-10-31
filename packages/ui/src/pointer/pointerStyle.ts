@@ -20,6 +20,9 @@ export const SETTLE = 120;
 /** How long a shortcut stays on screen, and how many show at once. */
 export const SHORTCUT_TIME = 1800;
 export const SHORTCUT_LIMIT = 3;
+/** Seconds a shortcut takes to rise in, and to fade out at the end. */
+const SHORTCUT_IN = 0.2;
+const SHORTCUT_OUT = 0.26;
 
 /** A point of the laser's trail. `life` runs from 1 at the head to 0 where it has faded. */
 export interface TrailPoint {
@@ -115,4 +118,88 @@ export function drawHold(
   circle(context, x, y, CLICK_RADIUS * (1.25 - 0.25 * settle) * scale);
   context.fill();
   context.stroke();
+}
+
+/** The standard pointer, its tip at `x`, `y`: for recordings without shapes, or a shape whose image is missing. */
+export function drawArrow(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+): void {
+  const points = [
+    [0, 0],
+    [0, 16.5],
+    [4, 12.7],
+    [6.6, 18.7],
+    [9.3, 17.6],
+    [6.8, 11.7],
+    [12.2, 11.7],
+  ] as const;
+  context.save();
+  context.translate(x, y);
+  context.scale(scale, scale);
+  context.beginPath();
+  points.forEach(([px, py], i) => context[i === 0 ? "moveTo" : "lineTo"](px, py));
+  context.closePath();
+  context.lineJoin = "round";
+  context.shadowColor = "rgb(0 0 0 / 0.35)";
+  context.shadowBlur = 3 * scale;
+  context.shadowOffsetY = scale;
+  context.strokeStyle = "white";
+  context.lineWidth = 2.2;
+  context.stroke();
+  context.shadowColor = "transparent";
+  context.fillStyle = "black";
+  context.fill();
+  context.restore();
+}
+
+/** Shortcuts as key caps in translucent pills, newest at the bottom, sized to the canvas. */
+export function drawShortcuts(
+  context: CanvasRenderingContext2D,
+  shortcuts: { parts: string[]; age: number }[],
+  /** The keys' text size in canvas pixels, e.g. on a canvas too small for their usual size to read. */
+  textSize?: number,
+): void {
+  const { width, height } = context.canvas;
+  const size = textSize ?? Math.max(height / 26, 10);
+  const pad = { x: size * 0.66, y: size * 0.42 };
+  const cap = { x: size * 0.42, y: size * 0.18, gap: size * 0.25 };
+  const capHeight = size + 2 * cap.y;
+  const pillHeight = capHeight + 2 * pad.y;
+  context.font = `500 ${size}px "DM Sans Variable", ui-sans-serif, system-ui, sans-serif`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  let bottom = height - height * 0.07;
+  shortcuts.reverse().forEach(({ parts, age }, i) => {
+    if (parts.length === 0) return;
+    const comeIn = Math.min(age / SHORTCUT_IN, 1);
+    const go = Math.min((SHORTCUT_TIME / 1000 - age) / SHORTCUT_OUT, 1);
+    const eased = 1 - (1 - comeIn) ** 3;
+    context.globalAlpha = Math.max(0, Math.min(comeIn, go)) * (i === 0 ? 1 : 0.55);
+    const widths = parts.map((part) =>
+      Math.max(context.measureText(part).width + 2 * cap.x, size * 1.5),
+    );
+    const pillWidth =
+      widths.reduce((total, w) => total + w, 0) + cap.gap * (parts.length - 1) + 2 * pad.x;
+    const top = bottom - pillHeight + (1 - eased) * size;
+    let x = (width - pillWidth) / 2;
+    context.fillStyle = "rgb(0 0 0 / 0.5)";
+    context.beginPath();
+    context.roundRect(x, top, pillWidth, pillHeight, size * 0.66);
+    context.fill();
+    x += pad.x;
+    parts.forEach((part, k) => {
+      context.fillStyle = "rgb(255 255 255 / 0.15)";
+      context.beginPath();
+      context.roundRect(x, top + pad.y, widths[k]!, capHeight, size * 0.33);
+      context.fill();
+      context.fillStyle = "white";
+      context.fillText(part, x + widths[k]! / 2, top + pad.y + capHeight / 2);
+      x += widths[k]! + cap.gap;
+    });
+    bottom = top - size * 0.33;
+  });
+  context.globalAlpha = 1;
 }
