@@ -10,13 +10,13 @@
     orientation,
     resolveCamera,
     sizeName,
-  } from "../../domain/quality.ts";
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import MenuItem from "@teamblocks.dev/chord-ui/MenuItem.svelte";
-  import Segmented from "@teamblocks.dev/chord-ui/Segmented.svelte";
+  } from "#ui/model/quality.ts";
+  import type { RecordingSetup } from "#ui/model/setup.ts";
+  import MenuItem from "#ui/MenuItem.svelte";
+  import Segmented from "#ui/Segmented.svelte";
   import PresetSwitch from "./PresetSwitch.svelte";
   import QualityRow from "./QualityRow.svelte";
-  import { choosePreset, selectedCameras, setCameraQuality } from "./shared.ts";
+  import { choosePreset, selectedCameras, setCameraQuality } from "./controls.ts";
 
   let { setup }: { setup: RecordingSetup } = $props();
 

@@ -1,14 +1,17 @@
 <script lang="ts">
   // The displays to record, as menu items. Previews run only while the screen is on.
-  import { findDisplays, sources } from "../sources.svelte.ts";
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import MenuItem from "@teamblocks.dev/chord-ui/MenuItem.svelte";
-  import DisplayPreview from "../DisplayPreview.svelte";
-  import { toggleDisplay } from "./shared.ts";
+  import type { RecordingSetup } from "#ui/model/setup.ts";
+  import { findDisplays } from "#ui/model/sources.ts";
+  import MenuItem from "#ui/MenuItem.svelte";
+  import { toggleDisplay } from "./controls.ts";
+  import { recordingEnvironment } from "./environment.ts";
 
   let { setup }: { setup: RecordingSetup } = $props();
 
-  let displays = $derived(findDisplays(setup.displayIds));
+  const { sources, previews } = recordingEnvironment();
+  const DisplayPreview = previews.display;
+
+  let displays = $derived(findDisplays(sources.displays, setup.displayIds));
 </script>
 
 {#each sources.displays as option (option.id)}

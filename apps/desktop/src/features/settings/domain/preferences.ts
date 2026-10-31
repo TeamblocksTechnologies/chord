@@ -156,7 +156,4 @@ export function withoutPreferences<T extends object>(
   return rest as Omit<T, (typeof SETUP_KEYS)[number]>;
 }
 
-/** Everything a recording hides: the setup's own apps and the always-hidden ones. */
-export function excludedApps(setupHidden: string[], alwaysHidden: string[]): string[] {
-  return [...new Set([...setupHidden, ...alwaysHidden])];
-}
+export { excludedApps } from "@teamblocks.dev/chord-ui/model/setup";

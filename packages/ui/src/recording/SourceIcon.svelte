@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { paths, type IconName } from "@teamblocks.dev/chord-ui/Icon.svelte";
+  import { paths, type IconName } from "#ui/Icon.svelte";
   import ScreenIcon from "./ScreenIcon.svelte";
   import { isScreenIcon } from "./screenIconMotion.ts";
   import { sourceSlashMotion } from "./sourceSlashMotion.ts";

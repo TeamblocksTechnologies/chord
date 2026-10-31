@@ -7,6 +7,7 @@
  * lands on the recorded position whenever a button is down, so clicks and drags stay on what they hit.
  */
 import { DEFAULT_CURSOR_STYLE, type CursorStyle } from "#features/editing/domain/visualLayers";
+import { drawArrow } from "@teamblocks.dev/chord-ui/pointer/pointerStyle";
 import type { Projection } from "./effects.ts";
 import type { CursorSample, PlaybackInput, ShapeSample } from "./timeline.ts";
 
@@ -125,41 +126,6 @@ export function drawCursor(
   } else {
     drawArrow(context, x, y, scale);
   }
-  context.restore();
-}
-
-/** The standard pointer, its tip at `x`, `y`: for recordings without shapes, or a shape whose image is missing. */
-export function drawArrow(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  scale: number,
-): void {
-  const points = [
-    [0, 0],
-    [0, 16.5],
-    [4, 12.7],
-    [6.6, 18.7],
-    [9.3, 17.6],
-    [6.8, 11.7],
-    [12.2, 11.7],
-  ] as const;
-  context.save();
-  context.translate(x, y);
-  context.scale(scale, scale);
-  context.beginPath();
-  points.forEach(([px, py], i) => context[i === 0 ? "moveTo" : "lineTo"](px, py));
-  context.closePath();
-  context.lineJoin = "round";
-  context.shadowColor = "rgb(0 0 0 / 0.35)";
-  context.shadowBlur = 3 * scale;
-  context.shadowOffsetY = scale;
-  context.strokeStyle = "white";
-  context.lineWidth = 2.2;
-  context.stroke();
-  context.shadowColor = "transparent";
-  context.fillStyle = "black";
-  context.fill();
   context.restore();
 }
 

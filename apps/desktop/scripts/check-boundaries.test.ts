@@ -74,6 +74,16 @@ test("UI wildcard exports preserve component and rune-helper resolution regardle
     ).errors.join(),
     /independent/,
   );
+  // The UI package's model is framework-free, so domain code may share it, and it is held to domain rules.
+  assert.deepEqual(
+    checkImport(source("features/editing/domain/cuts.ts"), "@teamblocks.dev/chord-ui/model/setup", {
+      ...manifest,
+      exports,
+    }).errors,
+    [],
+  );
+  const model = fileURLToPath(new URL("../../../packages/ui/src/model/setup.ts", import.meta.url));
+  assert.match(checkImport(model, "svelte", { ...manifest, exports }).errors.join(), /independent/);
 });
 
 test("syntax inspection covers static, dynamic, type-only and worker imports without matching comments", () => {

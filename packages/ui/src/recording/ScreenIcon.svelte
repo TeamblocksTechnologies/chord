@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { paths } from "@teamblocks.dev/chord-ui/Icon.svelte";
+  import { paths } from "#ui/Icon.svelte";
   import {
     screenIconMotion,
     screenShape,

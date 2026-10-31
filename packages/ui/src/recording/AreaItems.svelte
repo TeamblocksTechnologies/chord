@@ -1,14 +1,18 @@
 <script lang="ts">
   // `area` mode's displays, as menu items, each with how many areas it has and a preview with its areas outlined.
-  // Clicking an item checks or unchecks the display; clicking a checked one's preview opens the picker over every display.
-  import type { DisplaySource } from "@teamblocks.dev/chord-recorder-protocol";
-  import { sources } from "../sources.svelte.ts";
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import MenuItem from "@teamblocks.dev/chord-ui/MenuItem.svelte";
-  import DisplayPreview from "../DisplayPreview.svelte";
-  import { chooseAreas, toggleAreaDisplay } from "./shared.ts";
+  // Clicking an item checks or unchecks the display; clicking a checked one's preview opens the picker over every display,
+  // where there is one.
+  import type { DisplaySource } from "#ui/model/sources.ts";
+  import type { RecordingSetup } from "#ui/model/setup.ts";
+  import MenuItem from "#ui/MenuItem.svelte";
+  import { canPickAreas, chooseAreas, toggleAreaDisplay } from "./controls.ts";
+  import { recordingEnvironment } from "./environment.ts";
 
   let { setup }: { setup: RecordingSetup } = $props();
+
+  const { sources, previews } = recordingEnvironment();
+  const DisplayPreview = previews.display;
+  const pickable = canPickAreas();
 
   const areasOn = (displayId: number) => setup.areas.filter((a) => a.displayId === displayId);
 </script>
@@ -24,27 +28,33 @@
   >
     {option.name}
     {#snippet preview()}
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div
-        data-action
-        class="group relative overflow-hidden rounded-md transition-[filter] hover:brightness-125"
-        onclick={(e) => {
-          e.stopPropagation();
-          chooseAreas(setup);
-        }}
-      >
+      {#if !pickable}
         <DisplayPreview display={option} {setup}>
           {#snippet overlay()}{@render outlines(option, areas)}{/snippet}
         </DisplayPreview>
-        <span
-          class="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
+      {:else}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div
+          data-action
+          class="group relative overflow-hidden rounded-md transition-[filter] hover:brightness-125"
+          onclick={(e) => {
+            e.stopPropagation();
+            chooseAreas(setup);
+          }}
         >
+          <DisplayPreview display={option} {setup}>
+            {#snippet overlay()}{@render outlines(option, areas)}{/snippet}
+          </DisplayPreview>
           <span
-            class="rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white backdrop-blur"
-            >Edit areas</span
+            class="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
           >
-        </span>
-      </div>
+            <span
+              class="rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white backdrop-blur"
+              >Edit areas</span
+            >
+          </span>
+        </div>
+      {/if}
     {/snippet}
   </MenuItem>
 {:else}

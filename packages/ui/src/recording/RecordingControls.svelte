@@ -3,13 +3,10 @@
   // on and off, keeping its settings; the rest opens its popup. While recording, the last source on can't be
   // switched off.
   import type { Snippet } from "svelte";
-  import { permissions, type Requirement } from "../permissions.svelte.ts";
-  import { sources } from "../sources.svelte.ts";
-  import type { PopupKind } from "#platform/contracts/desktop";
-  import { recordsAnything } from "#project-document/domain/recording";
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import Icon, { type IconName } from "@teamblocks.dev/chord-ui/Icon.svelte";
-  import Menu from "@teamblocks.dev/chord-ui/Menu.svelte";
+  import { recordsAnything, type RecordingSetup } from "#ui/model/setup.ts";
+  import { recordingEnvironment, type SourceNeed } from "./environment.ts";
+  import Icon, { type IconName } from "#ui/Icon.svelte";
+  import Menu from "#ui/Menu.svelte";
   import CameraItems from "./CameraItems.svelte";
   import MicrophoneItems from "./MicrophoneItems.svelte";
   import ScreenPanel from "./ScreenPanel.svelte";
@@ -21,7 +18,7 @@
     screenIcon,
     screenLabel,
     summarize,
-  } from "./shared.ts";
+  } from "./controls.ts";
 
   let {
     setup,
@@ -49,8 +46,10 @@
   let cameraActive = $derived(setup.cameraEnabled && setup.cameraIds.length > 0);
   let microphoneActive = $derived(setup.microphoneEnabled && setup.microphoneIds.length > 0);
 
+  const environment = recordingEnvironment();
+
   /** Why a source can't be used yet, while the system hasn't allowed what it needs. */
-  const blocked = (need: Requirement) => permissions.blockedReason(need);
+  const blocked = (need: SourceNeed) => environment.blockedReason(need);
 
   let audioReason = $derived(blocked("systemAudio"));
 
@@ -85,7 +84,7 @@
 
 <!-- The icon end is the switch; the rest opens the popup. -->
 {#snippet cell(
-  kind: PopupKind,
+  kind: "screen" | "camera" | "microphone",
   title: string,
   icon: IconName,
   on: boolean,
@@ -94,7 +93,7 @@
   toggle: () => void,
   open: boolean,
   last: boolean,
-  need: Requirement,
+  need: SourceNeed,
 )}
   {@const reason = blocked(need)}
   <div
@@ -181,7 +180,7 @@
           summarize(cameraNames(setup), "Off"),
           () => {
             if (cameraActive) return (setup.cameraEnabled = false);
-            setup.cameraIds = devicesToEnable(setup.cameraIds, sources.cameras);
+            setup.cameraIds = devicesToEnable(setup.cameraIds, environment.sources.cameras);
             setup.cameraEnabled = true;
           },
           toggle,
@@ -203,7 +202,10 @@
           summarize(microphoneNames(setup), "Off"),
           () => {
             if (microphoneActive) return (setup.microphoneEnabled = false);
-            setup.microphoneIds = devicesToEnable(setup.microphoneIds, sources.microphones);
+            setup.microphoneIds = devicesToEnable(
+              setup.microphoneIds,
+              environment.sources.microphones,
+            );
             setup.microphoneEnabled = true;
           },
           toggle,

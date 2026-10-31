@@ -1,7 +1,7 @@
 <script lang="ts">
   // Independent controls for the desktop background and the Mac’s Dock, menu bar, and system overlays.
-  import type { RecordingSetup } from "#project-document/domain/recording";
-  import Toggle from "@teamblocks.dev/chord-ui/Toggle.svelte";
+  import type { RecordingSetup } from "#ui/model/setup.ts";
+  import Toggle from "#ui/Toggle.svelte";
   import QualityRow from "./QualityRow.svelte";
 
   let { setup }: { setup: RecordingSetup } = $props();

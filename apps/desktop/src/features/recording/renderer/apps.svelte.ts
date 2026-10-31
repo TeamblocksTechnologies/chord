@@ -1,12 +1,9 @@
 import { onMount } from "svelte";
+import type { AppEntry } from "@teamblocks.dev/chord-ui/recording/environment";
 import { uniqueApplications } from "./sources.svelte.ts";
 
-export interface AppEntry {
-  bundleId: string;
-  name: string;
-  /** Has a window open now, as the helper lists it. */
-  open: boolean;
-}
+export type { AppEntry } from "@teamblocks.dev/chord-ui/recording/environment";
+export { filterApps } from "@teamblocks.dev/chord-ui/recording/controls";
 
 /** Apps in the usual app folders, open or not. Refreshed by `refreshInstalledApps`. */
 export const installedApps = $state<{ list: { bundleId: string; name: string }[] }>({ list: [] });
@@ -79,12 +76,6 @@ export function allApps(extra: string[] = []): AppEntry[] {
   return [...open, ...closed].toSorted((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
-}
-
-/** Case-insensitive name matching, shared by the grouped and flat app pickers. */
-export function filterApps(apps: AppEntry[], query: string): AppEntry[] {
-  const needle = query.trim().toLowerCase();
-  return apps.filter((app) => app.name.toLowerCase().includes(needle));
 }
 
 /** An app's name, open or not, from its bundle id. */

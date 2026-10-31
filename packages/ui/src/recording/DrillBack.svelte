@@ -1,6 +1,6 @@
 <script lang="ts">
   // Heads a nested popup view. Escape steps back rather than closing the popup.
-  import Icon from "@teamblocks.dev/chord-ui/Icon.svelte";
+  import Icon from "#ui/Icon.svelte";
 
   let { label, onback }: { label: string; onback: () => void } = $props();
 

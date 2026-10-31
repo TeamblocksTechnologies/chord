@@ -4,8 +4,8 @@
   import { TOOLBAR_HEIGHT, TOOLBAR_WIDTH } from "#platform/contracts/desktop";
   import { recordsAnything } from "#project-document/domain/recording";
   import Icon from "@teamblocks.dev/chord-ui/Icon.svelte";
-  import RecordButton from "./RecordButton.svelte";
-  import RecordingControls from "./controls/RecordingControls.svelte";
+  import RecordButton from "@teamblocks.dev/chord-ui/recording/RecordButton.svelte";
+  import RecordingControls from "@teamblocks.dev/chord-ui/recording/RecordingControls.svelte";
   import { desktop } from "#platform/renderer/desktop.svelte";
   import { shortcutLabel } from "#features/settings/renderer/shortcuts.svelte";
   import { windowDrag } from "./windowDrag.ts";

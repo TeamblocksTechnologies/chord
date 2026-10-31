@@ -1,10 +1,12 @@
 import type {
   ApplicationSource,
-  DeviceSource,
   DisplaySource,
   SourceList,
 } from "@teamblocks.dev/chord-recorder-protocol";
 import { helper, onHelper } from "#platform/renderer/helper";
+import { findDisplays as displaysIn } from "@teamblocks.dev/chord-ui/model/sources";
+
+export { defaultDevice, findDevices } from "@teamblocks.dev/chord-ui/model/sources";
 
 /**
  * Displays, apps, and devices as the recorder helper lists them; their ids are what it records. Refreshed when the
@@ -41,12 +43,7 @@ onHelper("ready", () => void refreshSources());
 
 /** The displays a setup records: those in `ids`, or the main display when none are chosen. */
 export function findDisplays(ids: number[]): DisplaySource[] {
-  return sources.displays.filter((d) => (ids.length === 0 ? d.isMain : ids.includes(d.id)));
-}
-
-/** The connected devices among `ids`, in `list` order. Disconnected ids are skipped. */
-export function findDevices(list: DeviceSource[], ids: string[]): DeviceSource[] {
-  return list.filter((d) => ids.includes(d.id));
+  return displaysIn(sources.displays, ids);
 }
 
 /** Listed apps, one per bundle id: the helper lists each running process, so an app can appear more than once. */
@@ -62,8 +59,4 @@ export function findApplication(bundleId: string): ApplicationSource | undefined
 /** Falls back to the bundle id for apps that aren't running. */
 export function applicationName(bundleId: string): string {
   return findApplication(bundleId)?.name ?? bundleId;
-}
-
-export function defaultDevice(list: DeviceSource[]): DeviceSource | undefined {
-  return list.find((d) => d.isDefault) ?? list[0];
 }
