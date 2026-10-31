@@ -7,3 +7,9 @@ allowBuilds:
 # Keep a single-document lockfile until GitHub supports pnpm's env document.
 # scripts/check-package-manager.mjs enforces the package.json version during installs.
 pmOnFail: ignore
+auditConfig:
+  ignoreGhsas:
+    # minimatch's globparts denial of service. Only ESLint and other development tools use minimatch, on glob
+    # patterns from this repository's own config, and the fix is in minimatch 11, which ESLint doesn't support yet.
+    # Remove once ESLint depends on minimatch 11.
+    - GHSA-g3hv-75wg-m249
