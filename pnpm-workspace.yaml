@@ -2,6 +2,8 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  # Windows installers only; Chord ships for macOS.
+  electron-winstaller: false
   # macOS/CPU binaries ship in the package; no optional CUDA download is needed.
   onnxruntime-node: false
 # Keep a single-document lockfile until GitHub supports pnpm's env document.

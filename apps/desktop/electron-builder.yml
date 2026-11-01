@@ -1,0 +1,59 @@
+# Packages the signed, notarized arm64 app. `.github/workflows/release.yml` builds the native helpers first and
+# publishes to a draft GitHub release; `pnpm package` builds locally without publishing.
+appId: dev.teamblocks.chord
+productName: Chord
+copyright: Copyright © Teamblocks Technologies
+artifactName: ${productName}-${version}-${arch}.${ext}
+directories:
+  output: dist
+files:
+  - out/**
+  - package.json
+  # onnxruntime-node ships binaries for every platform; keep the macOS arm64 ones.
+  - "!node_modules/onnxruntime-node/bin/napi-v*/{linux,win32}/**"
+  - "!node_modules/onnxruntime-node/bin/napi-v*/darwin/x64/**"
+asarUnpack:
+  - node_modules/onnxruntime-node/bin/**
+extraResources:
+  - from: ../../native/macos/.build/release
+    to: .
+    filter: [recorder-helper, transcriber-helper, background-helper, audio-helper]
+  - from: resources/licenses
+    to: licenses
+  - from: ../..
+    to: .
+    filter: [LICENSE, THIRD_PARTY_NOTICES.md]
+electronLanguages: [en]
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+    # Squirrel.Mac installs updates from the zip.
+    - target: zip
+      arch: arm64
+  category: public.app-category.video
+  # An Icon Composer bundle around one SVG; electron-builder compiles it to an asset catalog plus an .icns fallback.
+  icon: build/icon.icon
+  minimumSystemVersion: "14.0"
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  # `native/macos/scripts/build.sh` signs the helpers with their own entitlements and embedded Info.plist.
+  signIgnore:
+    - Contents/Resources/(recorder|transcriber|background|audio)-helper$
+  notarize: true
+  extendInfo:
+    NSCameraUsageDescription: Chord records video from your camera.
+    NSMicrophoneUsageDescription: Chord records audio from your microphone.
+    NSAudioCaptureUsageDescription: Chord records system audio.
+publish:
+  provider: github
+  owner: TeamblocksTechnologies
+  repo: chord
+  releaseType: draft

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="#ffffff">
+  <!-- The logo mark from LogoMark.svelte, centred on the 1024 canvas. -->
+  <g transform="translate(512 512) scale(8.2) translate(-69.0422 -64.6369)">
+    <!-- The ring is a filled band, not a stroke: icon layers are sized to path geometry, which would clip a stroke. -->
+    <path fill-rule="evenodd" d="M29.1187 64.6369a39.9235 39.9235 0 1 0 79.8470 0a39.9235 39.9235 0 1 0 -79.8470 0ZM37.2759 64.6369a31.7663 31.7663 0 1 0 63.5326 0a31.7663 31.7663 0 1 0 -63.5326 0Z" />
+    <rect x="48.1371" y="46.7684" width="10.8774" height="35.737" rx="5.43871" />
+    <rect x="79.0699" y="46.7684" width="10.8774" height="35.737" rx="5.43871" />
+    <rect x="63.6034" y="39.5152" width="10.8774" height="50.2433" rx="5.43871" />
+  </g>
+</svg>
