@@ -66,7 +66,7 @@ Chord is in early development, so expect rough edges and changes along the way.
 
 - **macOS:** macOS 14 or later, tested on Apple Silicon. A few features need a newer version of macOS, and Intel Macs aren't supported yet.
 - **Windows, Linux and mobile:** coming soon.
-- **Downloads:** there are no packaged releases yet. To try Chord, [build it from source](#building-from-source).
+- **Downloads:** get the Apple Silicon build from [Releases](https://github.com/TeamblocksTechnologies/chord/releases/latest). Each download is attested to the commit it was built from; check one with `gh attestation verify Chord-<version>-arm64.dmg --repo TeamblocksTechnologies/chord`.
 - **Help:** if something isn't working, [open an issue](https://github.com/TeamblocksTechnologies/chord/issues).
 
 ## Building from source
@@ -106,7 +106,7 @@ pnpm build
 pnpm test:integration # After building the app and native helpers; needs ffmpeg
 ```
 
-See [source organization](docs/architecture.md) for how the code is laid out, and the [desktop app README](apps/desktop/README.md) for integration checks and screenshots.
+See [source organization](docs/architecture.md) for how the code is laid out, [releasing](docs/releasing.md) for how versions ship, and the [desktop app README](apps/desktop/README.md) for integration checks and screenshots.
 
 ## Contributing
 
