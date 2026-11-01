@@ -31,6 +31,17 @@ This confirms the file was built by `release.yml` in this repository and names t
 Then open the DMG, drag Chord to Applications and launch it. It should open without a Gatekeeper warning, and
 `spctl --assess --verbose=2 /Applications/Chord.app` should report `Notarized Developer ID`.
 
+## Dry runs
+
+Run the Release workflow by hand from the Actions tab, or with `gh workflow run release.yml`, to check signing and
+notarization without a tag. It builds, signs, notarizes and checks the app exactly as a release does, then uploads
+the DMG as a run artifact instead of drafting a release. Dry runs start from `main`'s cached Swift build, so they take
+a few minutes rather than the half hour of a release.
+
+Use one after changing the workflow, the certificate or the Apple API key, or before a release that upgrades Electron,
+electron-builder or Xcode. The `release` environment only accepts `main`, so to try an unmerged branch, add it to the
+environment's deployment branches for the duration and remove it afterwards.
+
 ## Packaging locally
 
 ```sh
@@ -49,8 +60,8 @@ directly or open the bundle in Icon Composer.
 
 ## Setup
 
-The workflow runs in the `release` environment. Restrict its deployments to `v*` tags so only release tags can read
-these secrets:
+The workflow runs in the `release` environment. Restrict its deployments to `main` and `v*` tags so only release
+tags and dry runs on `main` can read these secrets:
 
 | Secret                       | Value                                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------ |
@@ -59,3 +70,8 @@ these secrets:
 | `APPLE_API_KEY`              | Contents of an App Store Connect API key (`AuthKey_….p8`)                            |
 | `APPLE_API_KEY_ID`           | That key's ID                                                                        |
 | `APPLE_API_ISSUER`           | The issuer ID shown above the keys list in App Store Connect                         |
+
+The certificate must be the **Developer ID Application** one, not Apple Development; the workflow lists the identities
+it found when it can't find one. It expires on 1 February 2027. Apps already released stay valid, since their
+signatures are timestamped, but before then create a new certificate, replace `MACOS_CERTIFICATE` and
+`MACOS_CERTIFICATE_PASSWORD`, and check them with a dry run.

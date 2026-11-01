@@ -2,9 +2,13 @@ name: Release
 
 # Pushing a `v*` tag builds the signed, notarized arm64 app from that commit and drafts a GitHub release with the
 # downloads. Publishing the draft is a manual step, and only published releases reach the in-app updater.
+# Running it by hand is a dry run: the same signed, notarized build, uploaded as a run artifact instead.
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Dry run on {0}', github.ref_name) || github.ref_name }}
 
 permissions:
   contents: read
@@ -18,7 +22,7 @@ jobs:
     name: Build and draft the release
     runs-on: macos-26
     timeout-minutes: 60
-    # Holds the signing and notarization secrets; restrict its deployments to `v*` tags.
+    # Holds the signing and notarization secrets; restrict its deployments to `main` and `v*` tags.
     environment: release
     permissions:
       contents: write
@@ -29,6 +33,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Check the tag matches every version number
+        if: ${{ github.event_name == 'push' }}
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -71,7 +76,19 @@ jobs:
             exit 1
           fi
           echo "identity=$IDENTITY" >>"$GITHUB_OUTPUT"
-      # Built from scratch rather than from CI's caches, so everything shipped comes from this commit.
+      # Dry runs start from main's cached build to save time; releases build from scratch, so everything shipped
+      # comes from this commit.
+      - name: Restore the release helper build for a dry run
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            native/macos/.build
+            !native/macos/.build/repositories
+          key: swift-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.xcode-version', 'native/macos/Package.resolved') }}-${{ hashFiles('native/macos/Package.swift', 'native/macos/Sources/**', 'native/macos/Resources/**', 'native/macos/scripts/**') }}
+          restore-keys: |
+            swift-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.xcode-version', 'native/macos/Package.resolved') }}-
+            swift-release-${{ runner.os }}-${{ runner.arch }}-
       - name: Build and sign the native helpers using locked dependencies
         env:
           SIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
@@ -108,7 +125,16 @@ jobs:
           codesign --verify --deep --strict --verbose=2 mac-arm64/Chord.app
           xcrun stapler validate mac-arm64/Chord.app
           spctl --assess --type execute --verbose=2 mac-arm64/Chord.app
+      - name: Upload the dry-run download
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chord-dry-run
+          path: apps/desktop/dist/Chord-*.dmg
+          if-no-files-found: error
+          retention-days: 3
       - name: Attest the downloads were built from this commit
+        if: ${{ github.event_name == 'push' }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
@@ -116,6 +142,7 @@ jobs:
             apps/desktop/dist/Chord-*.zip
             apps/desktop/dist/latest-mac.yml
       - name: Draft the release
+        if: ${{ github.event_name == 'push' }}
         working-directory: apps/desktop/dist
         env:
           GH_TOKEN: ${{ github.token }}
