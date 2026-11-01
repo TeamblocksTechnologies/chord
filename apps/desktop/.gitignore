@@ -3,3 +3,6 @@ out/
 
 # Integration-test fixtures; they sit in the source tree so Vite can resolve workspace dependencies.
 tests/integration/.*/
+
+# Packaged apps from electron-builder
+dist/

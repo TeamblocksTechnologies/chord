@@ -10,6 +10,7 @@
     "postinstall": "install-electron",
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
+    "package": "electron-vite build && electron-builder --mac --arm64 --publish never",
     "start": "electron-vite preview",
     "test": "node --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "test:integration": "node scripts/test-integration.mjs",
@@ -24,9 +25,11 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "@teamblocks.dev/chord-recorder-protocol": "workspace:*",
+    "@teamblocks.dev/chord-ui": "workspace:*",
     "@types/node": "^24.19.2",
     "@typescript/native": "npm:typescript@^7.0.2",
     "electron": "^44.10.0",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "gifenc": "1.0.3",
     "mediabunny": "^1.62.0",
@@ -34,8 +37,7 @@
     "svelte-check": "^4.7.7",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
-    "vite": "^8.3.4",
-    "@teamblocks.dev/chord-ui": "workspace:*"
+    "vite": "^8.3.4"
   },
   "dependencies": {
     "electron-updater": "^6.8.11",
