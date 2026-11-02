@@ -1370,13 +1370,15 @@ app.whenReady().then(async () => {
     await until(async () => (await stored(main)).recordings[0].cuts?.length === 2, "a second cut");
     await seekTo(0.55);
     played = await sample(1.4);
+    // A jump starts from the last frame seen, which on a stalled machine can be well before the cut it skips, so
+    // where it lands says which cut was skipped: the first one ends by 0.8, the second after 1.25.
     assert.ok(
-      !played.jumps.some(([from]) => from < 0.8),
+      !played.jumps.some(([, to]) => to < 1.05),
       `The first cut can be previewed (${format(played)})`,
     );
     assert.ok(
       !played.times.some((t) => t > 1.05 && t < 1.28) &&
-        played.jumps.some(([from, to]) => from > 0.8 && from < 1.25 && to >= 1.28),
+        played.jumps.some(([from, to]) => from < 1.25 && to >= 1.28),
       `The next cut is skipped again (${format(played)})`,
     );
 
