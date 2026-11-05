@@ -6,13 +6,31 @@
   import { router } from "#platform/renderer/router.svelte";
   import { settings } from "#features/settings/renderer/settings.svelte";
   import Home from "#features/projects/renderer/Home.svelte";
-  import ProjectView from "#features/editing/renderer/ProjectView.svelte";
-  import SettingsDialog from "#features/settings/renderer/SettingsDialog.svelte";
-  import RecordingView from "#features/recording/renderer/RecordingView.svelte";
   import { connectDesktop, desktop } from "#platform/renderer/desktop.svelte";
   import ContextMenu from "@teamblocks.dev/chord-ui/ContextMenu.svelte";
 
   connectDesktop(() => projectStore.defaults);
+
+  // Home shows first. The editor, recording, and settings screens load right after it, so the window doesn't wait on
+  // them to draw, and opening one rarely does either.
+  type Loaded<T extends { default: unknown }> = T["default"] | undefined;
+  let ProjectView =
+    $state<Loaded<typeof import("#features/editing/renderer/ProjectView.svelte")>>();
+  let RecordingView =
+    $state<Loaded<typeof import("#features/recording/renderer/RecordingView.svelte")>>();
+  let SettingsDialog =
+    $state<Loaded<typeof import("#features/settings/renderer/SettingsDialog.svelte")>>();
+  onMount(() => {
+    void import("#features/recording/renderer/RecordingView.svelte").then(
+      (module) => (RecordingView = module.default),
+    );
+    void import("#features/editing/renderer/ProjectView.svelte").then(
+      (module) => (ProjectView = module.default),
+    );
+    void import("#features/settings/renderer/SettingsDialog.svelte").then(
+      (module) => (SettingsDialog = module.default),
+    );
+  });
 
   let route = $derived(router.current);
   let project = $derived(route.name === "project" ? projectStore.get(route.id) : undefined);
@@ -70,17 +88,21 @@
 
 <div class="flex h-screen flex-col text-neutral-100 antialiased">
   {#if recorder.active}
-    <RecordingView />
+    {#if RecordingView}<RecordingView />{/if}
   {:else if route.name === "home"}
     <Home />
   {:else if project}
-    {#key project.id}
-      <ProjectView {project} initialTime={route.name === "project" ? route.time : undefined} />
-    {/key}
+    {#if ProjectView}
+      {#key project.id}
+        <ProjectView {project} initialTime={route.name === "project" ? route.time : undefined} />
+      {/key}
+    {:else}
+      <div class="skeleton m-3 flex-1 rounded-xl"></div>
+    {/if}
   {/if}
 </div>
 
-{#if settings.tab}
+{#if settings.tab && SettingsDialog}
   <SettingsDialog />
 {/if}
 
