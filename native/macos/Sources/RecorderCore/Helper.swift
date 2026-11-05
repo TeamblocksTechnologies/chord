@@ -1,7 +1,7 @@
 import Foundation
 
 public actor Helper {
-    public static let version = "0.1.0"
+    public static let version = "0.1.1"
 
     private let send: @Sendable (Outgoing) async -> Void
     private let clock: HostClock
