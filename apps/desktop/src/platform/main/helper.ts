@@ -1,4 +1,4 @@
-import { type ChildProcessByStdio, spawn } from "node:child_process";
+import { type ChildProcessByStdio, execFile, spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
@@ -6,6 +6,7 @@ import {
   type MethodName,
   type MethodParams,
   type MethodResult,
+  type Permissions,
   type PreviewFrame,
   type RpcError,
   type RpcFailure,
@@ -56,6 +57,8 @@ export class RecorderHelper {
   #listeners = new Set<(notification: RpcNotification) => void>();
   #frameListeners = new Set<(frame: PreviewFrame) => void>();
   #stopping = false;
+  /** Helpers replaced by `restart`, whose exit isn't a crash. */
+  #retired = new WeakSet<HelperProcess>();
   readonly binary: string;
 
   constructor(binary: string) {
@@ -82,6 +85,40 @@ export class RecorderHelper {
   onFrame(listener: (frame: PreviewFrame) => void): () => void {
     this.#frameListeners.add(listener);
     return () => this.#frameListeners.delete(listener);
+  }
+
+  /**
+   * Permissions as a newly started helper sees them, or null if it can't say. A running one can keep seeing a
+   * permission allowed in System Settings since it started as denied.
+   */
+  probePermissions(): Promise<Permissions | null> {
+    return new Promise((resolve) => {
+      const child = execFile(this.binary, ["--permissions"], { timeout: 3000 }, (error, stdout) => {
+        if (error) return resolve(null);
+        try {
+          const permissions = JSON.parse(stdout) as Permissions;
+          resolve(typeof permissions?.screen === "string" ? permissions : null);
+        } catch {
+          resolve(null);
+        }
+      });
+      child.stdin?.end();
+    });
+  }
+
+  /**
+   * Swaps in a new helper, so permissions allowed since this one started work without quitting the app. Only between
+   * sessions: it finalizes any session as it exits. Its `ready` notification has listeners resend their state.
+   */
+  restart(): void {
+    const child = this.#process;
+    if (!child) return;
+    this.#retired.add(child);
+    this.#process = undefined;
+    for (const { reject } of this.#pending.values()) reject(new Error("recorder helper restarted"));
+    this.#pending.clear();
+    child.stdin.end();
+    this.#start();
   }
 
   /** Closing stdin makes the helper finalize any session and exit. */
@@ -116,7 +153,7 @@ export class RecorderHelper {
     });
     child.on("exit", (code, signal) => {
       ended(`exited (${signal ?? code})`);
-      if (this.#stopping) return;
+      if (this.#stopping || this.#retired.has(child)) return;
       console.error(`[recorder-helper] exited unexpectedly (${signal ?? code}); restarting`);
       setTimeout(() => this.#start(), 1000);
     });

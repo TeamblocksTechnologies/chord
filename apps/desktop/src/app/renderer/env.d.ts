@@ -47,6 +47,8 @@ interface Window {
     onPreviewFrame(listener: (id: string, image: Uint8Array) => void): () => void;
     /** Opens the System Settings pane where `kind` ("screen", "microphone", "camera", "accessibility") is allowed. */
     openPermissionSettings(kind: string): Promise<void>;
+    /** Permissions as a newly started helper sees them, after ones allowed in System Settings while Chord runs. */
+    checkPermissions(): Promise<import("@teamblocks.dev/chord-recorder-protocol").Permissions>;
     /** Apps in the usual app folders, whether or not they're open. Empty off macOS. */
     installedApps(): Promise<{ bundleId: string; name: string; path: string }[]>;
     /** Apps open now, as in the Dock. Empty off macOS. */
