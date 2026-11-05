@@ -80,9 +80,10 @@ export interface Methods {
     result: { failures: AudioSourceFailure[] };
   };
   /**
-   * Shows exactly `previews`, independent of any session: each captures its display as a recording would, at most
-   * 960 pixels wide and ~10fps. Frames are too heavy for stdout, so they go to the pipe the app opens as the helper's
-   * file descriptor 3 (see `readPreviewFrames`): JPEG, or PNG with alpha for a `transparent` background. Previews
+   * Shows exactly `previews`, independent of any session: each captures its display or window as a recording would,
+   * at the size and rate it asks for within the helper's limits (the macOS helper defaults to 960 pixels wide at
+   * 10fps, and allows up to 1920 at 30fps). Frames are too heavy for stdout, so they go to the pipe the app opens as
+   * the helper's file descriptor 3 (see `readPreviewFrames`). Previews
    * no longer listed stop, and those whose settings changed restart; an empty list stops previewing. Previews that
    * can't start are left out and returned in `failures`, as all are when there's no pipe; the rest still run.
    */

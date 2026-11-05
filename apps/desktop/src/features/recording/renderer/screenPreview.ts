@@ -7,7 +7,7 @@ type Watcher = {
   onError: (error: unknown) => void;
 };
 
-/** Display thumbnails captured with the same app filters and background as a recording. */
+/** Display and window thumbnails, captured by the helper as a recording would capture them. */
 class ScreenPreviews {
   #watchers = new Map<string, Watcher>();
   #queue = Promise.resolve();

@@ -323,20 +323,38 @@ export interface WindowPreviewConfig {
   pinnedWindowIds?: number[];
 }
 
-/** A display shown live outside any session, as a `display` mode recording of it would capture it. */
+/**
+ * A display or window shown live outside any session, as a recording would capture it. Names exactly one of
+ * `displayId` and `windowId`.
+ */
 export interface ScreenPreview {
   /** Names the preview's frames. */
   id: string;
-  /** A `DisplaySource.id`. */
-  displayId: number;
-  /** Default `desktop`. */
+  /** A `DisplaySource.id`: the display as `display` mode records it. */
+  displayId?: number;
+  /**
+   * A `WindowSource.id` or `PreviewWindow.id`: the window on its own, as a followed or pinned window is recorded,
+   * on black.
+   */
+  windowId?: number;
+  /** Display previews only. Default `desktop`. */
   background?: ScreenBackground;
-  /** Include the Dock, menu bar, and system overlays. Defaults to true for `desktop`, false for `transparent`. */
+  /**
+   * Display previews only. Include the Dock, menu bar, and system overlays. Defaults to true for `desktop`, false for
+   * `transparent`.
+   */
   showsSystemUI?: boolean;
-  /** As in `ScreenConfig.excludedBundleIds`. Chord's own windows are always left out. */
+  /** Display previews only. As in `ScreenConfig.excludedBundleIds`. Chord's own windows are always left out. */
   excludedBundleIds?: string[];
   /** Default true. */
   showsCursor?: boolean;
+  /**
+   * The widest frame wanted, in pixels: the size it's shown at, so the helper doesn't capture and encode more. Frames
+   * are never wider than what's captured. The helper picks a default when omitted and may cap it.
+   */
+  maxWidth?: number;
+  /** Frames per second at most. The helper picks a default when omitted and may cap it. */
+  fps?: number;
 }
 
 export interface ScreenPreviewFailure {

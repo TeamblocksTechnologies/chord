@@ -276,8 +276,6 @@ contextBridge.exposeInMainWorld("chord", {
     ipcRenderer.on("preview:frame", handler);
     return () => ipcRenderer.removeListener("preview:frame", handler);
   },
-  selectPreviewSource: (source: { kind: "display" | "window"; id: number }): Promise<void> =>
-    ipcRenderer.invoke("preview:select-source", source),
   openPermissionSettings: (kind: string): Promise<void> =>
     ipcRenderer.invoke("permissions:open-settings", kind),
   checkPermissions: (): Promise<unknown> => ipcRenderer.invoke("permissions:check"),
