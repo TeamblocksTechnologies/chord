@@ -119,11 +119,19 @@ final class ScreenGroup: @unchecked Sendable {
         }
     }
 
-    /// What the track recording `displayId` for `subject` captures; nil when it doesn't.
+    /// What the track recording `displayId` for `subject` captures; nil when it doesn't. `focusedWindow` captures
+    /// nothing until there's a window to follow, so a session with none (every allowed window pinned, or none open)
+    /// records no empty frames.
     func target(_ displayId: CGDirectDisplayID, for subject: ScreenSubject) -> ScreenTarget? {
         switch subject {
-        case .mode, .area: Self.target(displayId, for: subject, in: mode)
-        case .pinned(let id): state.withLock { $0.pins[id] != nil } ? .window(bundleIds: nil) : nil
+        case .mode:
+            let target = Self.target(displayId, for: subject, in: mode)
+            if case .window = target, followed == nil { return nil }
+            return target
+        case .area:
+            return Self.target(displayId, for: subject, in: mode)
+        case .pinned(let id):
+            return state.withLock { $0.pins[id] != nil } ? .window(bundleIds: nil) : nil
         }
     }
 
@@ -188,7 +196,7 @@ final class ScreenGroup: @unchecked Sendable {
         try await queue.perform {
             if self.armedTracks == 0 {
                 try self.validate(self.mode)
-                try self.refresh(required: true)
+                self.refresh()
                 self.startPolling()
             }
             self.armedTracks += 1
@@ -211,14 +219,7 @@ final class ScreenGroup: @unchecked Sendable {
             try self.validate(mode)
             let previous = self.mode
             self.state.withLock { $0.mode = mode }
-            if self.armedTracks > 0 {
-                do {
-                    try self.refresh(required: true)
-                } catch {
-                    self.state.withLock { $0.mode = previous }
-                    throw error
-                }
-            }
+            if self.armedTracks > 0 { self.refresh() }
             // Tracks capturing the same as before carry on, such as a display that stays selected.
             let changed = self.tracks.compactMap(\.track).filter { track in
                 if case .pinned = track.subject { return false }
@@ -281,7 +282,7 @@ final class ScreenGroup: @unchecked Sendable {
                 guard case .pinned(let id) = track.subject else { return false }
                 return changedIds.contains(id) && !created.contains { $0 === track }
             }
-            if !added.isEmpty, self.armedTracks > 0 { try? self.refresh(required: false) }
+            if !added.isEmpty, self.armedTracks > 0 { self.refresh() }
             return (created, changed)
         }
         for track in changed { await track.restartCapture(reason: .unpinned) }
@@ -493,7 +494,7 @@ final class ScreenGroup: @unchecked Sendable {
         timer.schedule(deadline: .now() + Self.pollInterval, repeating: Self.pollInterval)
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            try? self.refresh(required: false)
+            self.refresh()
             for track in self.tracks.compactMap(\.track) { track.reconcile() }
         }
         timer.resume()
@@ -501,7 +502,7 @@ final class ScreenGroup: @unchecked Sendable {
     }
 
     /// On `queue`. Brings the followed window, the pinned windows, and the UI shown with each in step with the screen.
-    /// `required` throws if `focusedWindow` mode has no window to follow and nothing is pinned.
+    /// `focusedWindow` mode may have no window to follow; its track waits until there is one.
     ///
     /// The followed window: a window that opens from it while it's on screen, from the same app, is its popup while
     /// it stays open if it's noticeably smaller, or if Accessibility says it's a dialog, sheet, or panel; pinned
@@ -509,7 +510,7 @@ final class ScreenGroup: @unchecked Sendable {
     /// window follows it, unless it's pinned. If what's focused isn't allowed, the current window stays; if that's
     /// gone, the topmost allowed window is followed. Records changes of window, title, or visibility; tracks record
     /// the bounds of each frame.
-    private func refresh(required: Bool) throws {
+    private func refresh() {
         let mode = self.mode
         let follows = if case .focusedWindow = mode { true } else { false }
         let pins = state.withLock { $0.pins }
@@ -545,9 +546,6 @@ final class ScreenGroup: @unchecked Sendable {
                 main = popups[front.id] != nil ? currentShown : front
             } else {
                 main = currentShown ?? normal.first(where: allowed)
-            }
-            if main == nil, required, pins.isEmpty {
-                throw HelperError(.windowUnavailable, "no allowed window is on screen")
             }
         }
 
