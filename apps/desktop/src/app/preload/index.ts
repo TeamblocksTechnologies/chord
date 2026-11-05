@@ -280,6 +280,7 @@ contextBridge.exposeInMainWorld("chord", {
     ipcRenderer.invoke("preview:select-source", source),
   openPermissionSettings: (kind: string): Promise<void> =>
     ipcRenderer.invoke("permissions:open-settings", kind),
+  checkPermissions: (): Promise<unknown> => ipcRenderer.invoke("permissions:check"),
   installedApps: (): Promise<unknown> => ipcRenderer.invoke("apps:installed"),
   runningApps: (): Promise<unknown> => ipcRenderer.invoke("apps:running"),
   appIcons: (apps: { bundleId: string; pid?: number }[]): Promise<Record<string, string>> =>

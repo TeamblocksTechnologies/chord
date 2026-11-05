@@ -16,6 +16,8 @@ export const requirements = {
 
 export type Requirement = keyof typeof requirements;
 
+const kinds: PermissionKind[] = ["screen", "camera", "microphone", "accessibility"];
+
 export const permissionLabels: Record<PermissionKind, string> = {
   camera: "Camera",
   microphone: "Microphone",
@@ -24,26 +26,49 @@ export const permissionLabels: Record<PermissionKind, string> = {
 };
 
 const POLL_MS = 2000;
+/** How long after asking for a permission each read checks with a fresh helper, while the user is in System Settings. */
+const WATCH_MS = 3 * 60_000;
 
 /**
  * The system's permission states as the helper reports them, re-read on focus and every couple of seconds, since
  * they change in System Settings without telling us. `null` until the first read.
+ *
+ * The running helper can keep seeing a permission allowed since it started as denied, so while one is missing, a
+ * return to the window and the reads after asking for one check with a fresh helper instead, which also swaps the
+ * running one for it. That's what lets the user skip quitting and reopening the app as macOS asks.
  */
 class PermissionStore {
   status = $state<Permissions | null>(null);
   #promptedScreen = false;
   #promptedAccessibility = false;
+  #watchUntil = 0;
+  /** Allowed as a fresh helper saw it, though the running one didn't yet. Cleared when the helper restarts. */
+  #allowed = new Set<PermissionKind>();
 
   constructor() {
     void this.refresh();
     setInterval(() => document.visibilityState === "visible" && void this.refresh(), POLL_MS);
-    window.addEventListener("focus", () => void this.refresh());
-    onHelper("ready", () => void this.refresh());
+    window.addEventListener("focus", () => void this.refresh(true));
+    onHelper("ready", () => {
+      this.#allowed.clear();
+      void this.refresh();
+    });
   }
 
-  async refresh(): Promise<void> {
+  async refresh(returned = false): Promise<void> {
+    const missing = !this.status || kinds.some((kind) => !this.granted(kind));
     try {
-      this.status = await helper.request("getPermissions");
+      if (missing && (returned || Date.now() < this.#watchUntil)) {
+        const fresh = await window.chord.checkPermissions();
+        for (const kind of kinds)
+          if (fresh[kind] !== "granted") this.#allowed.delete(kind);
+          else if (this.status?.[kind] !== "granted") this.#allowed.add(kind);
+        this.status = fresh;
+      } else {
+        const running = await helper.request("getPermissions");
+        for (const kind of this.#allowed) running[kind] = "granted";
+        this.status = running;
+      }
     } catch {
       // The helper isn't reachable; keep the last known state.
     }
@@ -87,13 +112,15 @@ class PermissionStore {
    */
   async enable(kind: PermissionKind): Promise<void> {
     if (!this.canPrompt(kind)) return this.openSettings(kind);
+    this.#watchUntil = Date.now() + WATCH_MS;
     if (kind === "screen") this.#promptedScreen = true;
     if (kind === "accessibility") this.#promptedAccessibility = true;
     this.status = await helper.request("requestPermission", { permission: kind });
   }
 
-  /** Opens the System Settings pane for `kind`. */
+  /** Opens the System Settings pane for `kind`, watching for it to be allowed there. */
   async openSettings(kind: PermissionKind): Promise<void> {
+    this.#watchUntil = Date.now() + WATCH_MS;
     await window.chord.openPermissionSettings(kind);
   }
 }

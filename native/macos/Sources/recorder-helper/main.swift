@@ -1,6 +1,14 @@
 import Foundation
 import RecorderCore
 
+// `--permissions` prints the permissions as a newly started process sees them, then exits. One that's running can
+// keep seeing a permission allowed in System Settings since it started as denied, or be unable to use it.
+if CommandLine.arguments.contains("--permissions") {
+    let data = try JSONEncoder().encode(PermissionCenter.current())
+    FileHandle.standardOutput.write(data + Data("\n".utf8))
+    exit(0)
+}
+
 // Before anything polls the cursor, so its shapes can be matched to the standard ones.
 MainActor.assumeIsolated { StandardCursors.prepare() }
 

@@ -5,6 +5,7 @@ import {
   type MethodName,
   type MethodParams,
   type MethodResult,
+  type Permissions,
   type ScreenPreview,
 } from "@teamblocks.dev/chord-recorder-protocol";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -170,6 +171,30 @@ ipcMain.handle("permissions:open-settings", (_event, kind: string) => {
     void shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`);
 });
 
+/**
+ * Permissions as they are now. Allowing one in System Settings makes macOS ask to quit and reopen the app, since a
+ * running process can keep seeing it as denied or be unable to use it; so a newly started helper is asked, and on a
+ * new grant the running one is swapped for a fresh one, between recordings. Choosing "Later" then works as well.
+ */
+let restartPending = false;
+/** Swaps the helper for a fresh one once nothing is recording, for permissions allowed during a recording. */
+function restartWhenIdle(): void {
+  restartPending = rendering.recording();
+  if (!restartPending) helper.restart();
+}
+ipcMain.handle("permissions:check", async (): Promise<Permissions> => {
+  const [running, fresh] = await Promise.all([
+    helper.request("getPermissions"),
+    helper.probePermissions(),
+  ]);
+  if (!fresh) return running;
+  const granted = (Object.keys(fresh) as (keyof Permissions)[]).some(
+    (kind) => fresh[kind] === "granted" && running[kind] !== "granted",
+  );
+  if (granted) restartWhenIdle();
+  return fresh;
+});
+
 /** What the renderer may ask the helper for. Sessions are the main process's, through the recording controller. */
 const RENDERER_METHODS = new Set<MethodName>([
   "listSources",
@@ -226,6 +251,8 @@ function bridgeHelper(): void {
   ipcMain.handle("helper:request", async (event, method: MethodName, params: unknown) => {
     if (!RENDERER_METHODS.has(method))
       return { ok: false, error: { code: -32601, message: `not allowed: ${method}` } };
+    // Renderers read permissions every couple of seconds, so this follows soon after a recording ends.
+    if (restartPending) restartWhenIdle();
     try {
       if (method === "setAudioPreview") {
         const { sources } = params as MethodParams<"setAudioPreview">;
