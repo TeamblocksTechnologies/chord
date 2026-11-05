@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { appIcons, loadIcons } from "./apps.svelte.ts";
   import { followedWindow } from "./followedWindow.svelte.ts";
+  import { uniqueApplications } from "./sources.svelte.ts";
   import WindowPreview from "./WindowPreview.svelte";
 
   let {
@@ -12,13 +14,30 @@
   $effect(() => followedWindow.watch([...allowedApps], [...hiddenApps], [...pinnedWindowIds]));
 
   let current = $derived(followedWindow.window);
+  let bundleId = $derived(current?.bundleId);
+
+  $effect(() => {
+    if (!bundleId) return;
+    const pid = uniqueApplications().find((a) => a.bundleId === bundleId)?.pid;
+    loadIcons([{ bundleId, pid }]);
+  });
 </script>
 
 {#if current}
   <WindowPreview windowId={current.id} />
-  <div class="mt-1.5 truncate text-xs text-glass-400" title={current.title ?? current.appName}>
-    <span class="text-neutral-200">{current.appName}</span>
-    {#if current.title && current.title !== current.appName}<span class="ml-1">{current.title}</span
+  <div
+    class="mt-1.5 flex items-center gap-1.5 text-xs text-glass-400"
+    title={current.title ?? current.appName}
+  >
+    {#if appIcons[current.bundleId]}<img
+        src={appIcons[current.bundleId]}
+        alt=""
+        class="size-4 shrink-0"
+        draggable="false"
+      />{/if}
+    <span class="shrink-0 text-neutral-200">{current.appName}</span>
+    {#if current.title && current.title !== current.appName}<span class="truncate"
+        >{current.title}</span
       >{/if}
   </div>
 {:else if followedWindow.loaded}
