@@ -49,16 +49,20 @@
       />{/if}
     <span class="truncate">{app.appName}</span>
   </div>
-  {#each windows as w (w.id)}
-    <MenuItem
-      selected={setup.pinnedWindowIds.includes(w.id)}
-      multiple
-      onclick={() => togglePinnedWindow(setup, w.id)}
-    >
-      {w.title || "Untitled window"}
-      {#snippet preview()}<WindowPreview windowId={w.id} />{/snippet}
-    </MenuItem>
-  {/each}
+  <!-- Indented so the checkboxes line up with the app's name, reading as its windows rather than one list. -->
+  <div class="pl-5.5">
+    {#each windows as w (w.id)}
+      <MenuItem
+        selected={setup.pinnedWindowIds.includes(w.id)}
+        multiple
+        onclick={() => togglePinnedWindow(setup, w.id)}
+      >
+        {w.title || "Untitled window"}
+        <!-- A thumbnail confirming the pick, kept small so several pinned windows still fit. -->
+        {#snippet preview()}<div class="w-40"><WindowPreview windowId={w.id} /></div>{/snippet}
+      </MenuItem>
+    {/each}
+  </div>
 {:else}
   <div class="px-2.5 py-6 text-center text-xs text-glass-500">No windows open</div>
 {/each}
