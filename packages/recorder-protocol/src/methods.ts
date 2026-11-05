@@ -43,7 +43,7 @@ export interface Methods {
   /**
    * Switches the screen tracks to `mode`. While recording, capturing tracks end their segment with `modeChanged`
    * and the tracks `mode` records start new ones; while paused, `mode` applies on resume. Fails without changing
-   * anything if `mode` can't start, e.g. `window_unavailable`. `invalid_config` if the session records no screen.
+   * anything if `mode` can't start, e.g. `display_unavailable`. `invalid_config` if the session records no screen.
    */
   setScreenMode: { params: { mode: ScreenMode }; result: null };
   /**

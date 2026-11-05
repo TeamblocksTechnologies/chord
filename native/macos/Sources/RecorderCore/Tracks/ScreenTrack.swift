@@ -56,6 +56,8 @@ final class ScreenTrack: NSObject, ScreenRecordingTrack, SCStreamOutput, SCStrea
     private var failures: FailureReporter
     /// A filter update or window switch is in flight.
     private var following = false
+    /// `focusedWindow`: armed with no window to follow yet, so the poll starts capturing once there is one.
+    private var awaitingWindow = false
     private var lastApplicationsCheck: ContinuousClock.Instant?
     private var startWaits: [ObjectIdentifier: StartWait] = [:]
 
@@ -213,10 +215,15 @@ final class ScreenTrack: NSObject, ScreenRecordingTrack, SCStreamOutput, SCStrea
 
     private func beginCapture() async throws {
         let claimed = await queue.run { () -> Bool in
-            guard
-                self.armed, self.capture == nil, !self.starting,
-                self.group.target(self.displayId, for: self.subject) != nil
-            else { return false }
+            guard self.armed, self.capture == nil, !self.starting else { return false }
+            guard self.group.target(self.displayId, for: self.subject) != nil else {
+                self.awaitingWindow =
+                    if self.subject == .mode, case .focusedWindow = self.group.mode { true } else {
+                        false
+                    }
+                return false
+            }
+            self.awaitingWindow = false
             self.starting = true
             return true
         }
@@ -365,7 +372,14 @@ final class ScreenTrack: NSObject, ScreenRecordingTrack, SCStreamOutput, SCStrea
 
     /// On `queue`.
     private func reconcileOnQueue() {
-        guard armed, !starting, !following, let capture else { return }
+        guard armed, !starting, !following else { return }
+        guard let capture else {
+            if awaitingWindow, !suspended, group.target(displayId, for: subject) != nil {
+                awaitingWindow = false
+                Task { await self.startReportingFailures() }
+            }
+            return
+        }
         if case .pinned(let windowId) = subject, group.isClosed(windowId) {
             self.capture = nil
             Task { await self.end(capture, reason: .windowClosed) }
