@@ -25,3 +25,10 @@ if printf '%s\n' "$changed" |
   grep -Eq '^(apps|packages|scripts)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|\.node-version)$'; then
   echo "app=true"
 fi >>"$GITHUB_OUTPUT"
+# On pull requests CodeQL extracts only the changed files, and its JavaScript analysis fails when
+# none of them hold code or YAML it scans. Leave out the paths .github/codeql/codeql-config.yml ignores.
+if printf '%s\n' "$changed" |
+  grep -Ev '(^|/)tests?/|\.test\.ts$|^apps/desktop/scripts/' |
+  grep -Eq '\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|vue|html|ya?ml)$'; then
+  echo "javascript=true"
+fi >>"$GITHUB_OUTPUT"

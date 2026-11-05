@@ -37,8 +37,9 @@ jobs:
       - name: Pick the languages to analyze
         id: languages
         env:
+          EVENT_NAME: ${{ github.event_name }}
           FULL: ${{ steps.areas.outputs.full }}
-          APP: ${{ steps.areas.outputs.app }}
+          JAVASCRIPT: ${{ steps.areas.outputs.javascript }}
           NATIVE: ${{ steps.areas.outputs.native }}
         run: |
           languages=""
@@ -46,7 +47,7 @@ jobs:
           if [ "$FULL" = true ]; then
             add '{"language":"actions","build-mode":"none","runner":"ubuntu-24.04"}'
           fi
-          if [ "$FULL" = true ] || [ "$APP" = true ]; then
+          if [ "$EVENT_NAME" != pull_request ] || [ "$JAVASCRIPT" = true ]; then
             add '{"language":"javascript-typescript","build-mode":"none","runner":"ubuntu-24.04"}'
           fi
           if [ "$FULL" = true ] || [ "$NATIVE" = true ]; then
