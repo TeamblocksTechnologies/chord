@@ -8,8 +8,11 @@ public enum SourceCatalog {
         let describe = { (id: CGDirectDisplayID) -> DisplaySource in display(id, name: names[id]) }
         var displays: [DisplaySource]
         var applications: [ApplicationSource] = []
-        // Bounded: ScreenCaptureKit can drop the callback, which would block every request after this one.
-        if let content = try? await SCShareableContent.onScreen(within: SCStream.callbackTimeout) {
+        // Bounded: ScreenCaptureKit can drop the callback, which would block every request after this one. Asked only
+        // once screen recording is allowed, since asking before then shows the system's permission prompt.
+        if CGPreflightScreenCaptureAccess(),
+            let content = try? await SCShareableContent.onScreen(within: SCStream.callbackTimeout)
+        {
             displays = content.displays.map { describe($0.displayID) }
             applications = content.applications
                 .filter { !$0.bundleIdentifier.isEmpty }
