@@ -41,8 +41,6 @@ interface Window {
           | { ok: false; error: string },
       ): Promise<void>;
     };
-    /** Chooses what the next `getDisplayMedia` call captures: a `DisplaySource.id` or `PreviewWindow.id`. */
-    selectPreviewSource(source: { kind: "display" | "window"; id: number }): Promise<void>;
     /** JPEG or PNG frames of this window's helper display previews, by `ScreenPreview.id`. */
     onPreviewFrame(listener: (id: string, image: Uint8Array) => void): () => void;
     /** Opens the System Settings pane where `kind` ("screen", "microphone", "camera", "accessibility") is allowed. */

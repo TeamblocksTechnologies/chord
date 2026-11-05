@@ -1,8 +1,12 @@
-/** A display preview's frame, from the helper's frame pipe. */
+/** A display or window preview's frame, from the helper's frame pipe. */
 export interface PreviewFrame {
   /** The `ScreenPreview.id`. */
   id: string;
-  /** JPEG, or PNG for a `transparent` background. */
+  /**
+   * An encoded image in any format browsers decode, which the helper picks. Frames with transparency (a display
+   * with a `transparent` background) need a format that keeps it, such as PNG; the macOS helper sends those as PNG
+   * and the rest as JPEG.
+   */
   image: Uint8Array;
 }
 

@@ -228,9 +228,22 @@ private func encode(_ message: Outgoing) throws -> String {
     }
 }
 
+@Test func screenPreviewsNameOneDisplayOrWindow() {
+    for previews in [#"[{"id":"a"}]"#, #"[{"id":"a","displayId":1,"windowId":2}]"#] {
+        let parsed = parse(
+            #"{"jsonrpc":"2.0","id":1,"method":"setScreenPreview","params":{"previews":"#
+                + previews + "}}")
+        if case .failure(let failure) = parsed {
+            #expect(failure.error.code == -32602)
+        } else {
+            Issue.record("expected \(previews) to be rejected")
+        }
+    }
+}
+
 @Test func screenPreviewsRoundTrip() throws {
     let request = try parse(
-        #"{"jsonrpc":"2.0","id":1,"method":"setScreenPreview","params":{"previews":[{"id":"a","displayId":1},{"id":"b","displayId":2,"background":"transparent","excludedBundleIds":["x"],"showsCursor":false}]}}"#
+        #"{"jsonrpc":"2.0","id":1,"method":"setScreenPreview","params":{"previews":[{"id":"a","displayId":1},{"id":"b","displayId":2,"background":"transparent","excludedBundleIds":["x"],"showsCursor":false},{"id":"c","windowId":7,"showsCursor":false,"maxWidth":320,"fps":15}]}}"#
     ).get()
     #expect(
         request.command
@@ -239,6 +252,8 @@ private func encode(_ message: Outgoing) throws -> String {
                 ScreenPreviewRequest(
                     id: "b", displayId: 2, background: .transparent, excludedBundleIds: ["x"],
                     showsCursor: false),
+                ScreenPreviewRequest(
+                    id: "c", windowId: 7, showsCursor: false, maxWidth: 320, fps: 15),
             ]))
     #expect(
         try encode(

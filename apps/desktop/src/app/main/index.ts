@@ -12,17 +12,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  BrowserWindow,
-  app,
-  desktopCapturer,
-  globalShortcut,
-  ipcMain,
-  net,
-  session,
-  shell,
-  webContents,
-} from "electron";
+import { BrowserWindow, app, globalShortcut, ipcMain, net, shell, webContents } from "electron";
 import type { BackgroundState } from "#features/background-removal/contracts/backgroundRemoval";
 import { RecordingBackgrounds } from "#features/background-removal/main/recordingBackgrounds";
 import { processBackground } from "#features/background-removal/main/backgroundProcessing";
@@ -683,44 +673,6 @@ function handleModels(preferences: PreferenceStore): ModelLibrary {
   return library;
 }
 
-/** What the renderer's next `getDisplayMedia` call shows: a helper `DisplaySource.id` or `PreviewWindow.id`. */
-const previewSources = new Map<number, { kind: "display" | "window"; id: number }>();
-
-/**
- * Display and window previews call `getDisplayMedia`. Answer with what the renderer picked instead of the system
- * picker. Electron uses the same CGDirectDisplayID and CGWindowID as the helper, so ids match exactly.
- */
-function handleDisplayMedia(): void {
-  ipcMain.handle(
-    "preview:select-source",
-    (event, source: { kind: "display" | "window"; id: number }) => {
-      previewSources.set(event.sender.id, source);
-    },
-  );
-  app.on("web-contents-created", (_event, contents) =>
-    contents.on("destroyed", () => previewSources.delete(contents.id)),
-  );
-  session.defaultSession.setDisplayMediaRequestHandler(
-    async (request, callback) => {
-      const owner = request.frame && webContents.fromFrame(request.frame);
-      const wanted = owner && previewSources.get(owner.id);
-      const types = wanted?.kind === "window" ? ["window" as const] : ["screen" as const];
-      const sources = await desktopCapturer.getSources({
-        types,
-        thumbnailSize: { width: 0, height: 0 },
-      });
-      const source = sources.find((s) =>
-        wanted?.kind === "window"
-          ? s.id.startsWith(`window:${wanted.id}:`)
-          : s.display_id === String(wanted?.id),
-      );
-      // An empty answer rejects the request, so the preview shows as unavailable.
-      callback(source ? { video: source } : {});
-    },
-    { useSystemPicker: false },
-  );
-}
-
 /** Recordings played back in the renderer: their session folders, and their media through `MEDIA_SCHEME`. */
 function handlePlayback(thumbnails: ProjectThumbnails): void {
   handleMediaScheme((projectId, file) => thumbnails.path(projectId, file));
@@ -769,7 +721,6 @@ app.whenReady().then(() => {
   const backgroundModels = handleBackgroundModels();
   const noiseModels = handleNoiseModels();
   const thumbnails = handleProjects(preferences, models, backgroundModels, noiseModels);
-  handleDisplayMedia();
   handlePlayback(thumbnails);
   rendering.exporting = handleExport();
   handleApps();

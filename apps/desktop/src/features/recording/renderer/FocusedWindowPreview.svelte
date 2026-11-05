@@ -1,7 +1,6 @@
 <script lang="ts">
   import { followedWindow } from "./followedWindow.svelte.ts";
-  import { windowPreview } from "./preview.ts";
-  import VideoPreview from "./VideoPreview.svelte";
+  import WindowPreview from "./WindowPreview.svelte";
 
   let {
     allowedApps,
@@ -13,13 +12,10 @@
   $effect(() => followedWindow.watch([...allowedApps], [...hiddenApps], [...pinnedWindowIds]));
 
   let current = $derived(followedWindow.window);
-  // Keyed on the id alone, so a title change doesn't restart the stream.
-  let windowId = $derived(current?.id);
-  let open = $derived(windowId === undefined ? undefined : windowPreview(windowId));
 </script>
 
-{#if open && current}
-  <VideoPreview {open} />
+{#if current}
+  <WindowPreview windowId={current.id} />
   <div class="mt-1.5 truncate text-xs text-glass-400" title={current.title ?? current.appName}>
     <span class="text-neutral-200">{current.appName}</span>
     {#if current.title && current.title !== current.appName}<span class="ml-1">{current.title}</span

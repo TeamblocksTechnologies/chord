@@ -2,9 +2,8 @@ import type { DeviceSource } from "@teamblocks.dev/chord-recorder-protocol";
 import { PermissionError, ensurePermission } from "#platform/renderer/helper";
 
 /**
- * Live video for previewing windows and cameras before recording. Display frames come from the helper
- * (see `screenPreview`) so they include its app filters and alpha. Windows match the helper's by id;
- * Chromium doesn't expose camera ids, so cameras match by name.
+ * Live video for previewing cameras before recording. Displays and windows come from the helper instead (see
+ * `screenPreview`), so they show what a recording would. Chromium doesn't expose camera ids, so cameras match by name.
  */
 
 /** Opens a preview stream. Callers own the stream and stop its tracks when done. */
@@ -55,32 +54,6 @@ export function cameraPreview(
       },
     });
   };
-}
-
-/** Screen previews open one at a time: the main process answers each request with the source last selected. */
-let opening: Promise<unknown> = Promise.resolve();
-
-function screenPreview(source: { kind: "display" | "window"; id: number }): PreviewSource {
-  return async () => {
-    if (!(await ensurePermission("screen"))) throw new PermissionError("screen");
-    const open = opening
-      .catch(() => {})
-      .then(async () => {
-        await window.chord.selectPreviewSource(source);
-        // A thumbnail: native resolution would be wasted work.
-        return navigator.mediaDevices.getDisplayMedia({
-          video: { width: { max: 960 }, frameRate: 15 },
-          audio: false,
-        });
-      });
-    opening = open;
-    return open;
-  };
-}
-
-/** Just the window, by `PreviewWindow.id`, even where others overlap it, as the recording shows it. */
-export function windowPreview(windowId: number): PreviewSource {
-  return screenPreview({ kind: "window", id: windowId });
 }
 
 /**
