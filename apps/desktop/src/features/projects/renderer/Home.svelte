@@ -1,6 +1,5 @@
 <script lang="ts">
   import Icon from "@teamblocks.dev/chord-ui/Icon.svelte";
-  import PermissionsPanel from "#features/recording/renderer/PermissionsPanel.svelte";
   import ProjectDeleteConfirmation from "./ProjectDeleteConfirmation.svelte";
   import type { Project } from "#project-document/domain/recording";
   import ProjectCard from "./ProjectCard.svelte";
@@ -156,7 +155,6 @@
     onRecord={() => recorder.start(setup)}
     onNewProject={newProject}
   >
-    {#snippet notice()}<PermissionsPanel />{/snippet}
     {#snippet projects()}
       {#if !projectStore.loaded}
         <!-- Arrives from the main process right after the window opens. -->

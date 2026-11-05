@@ -280,7 +280,7 @@
             </div>
           </SettingsSection>
 
-          <PermissionsPanel settings />
+          <PermissionsPanel />
         {/if}
       </section>
     </div>

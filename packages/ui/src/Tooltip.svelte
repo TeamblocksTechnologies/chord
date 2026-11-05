@@ -7,10 +7,13 @@
   let {
     text,
     placement = "bottom",
+    class: className = "",
     children,
   }: {
     text: string;
     placement?: "top" | "bottom" | "left" | "right";
+    /** For the wrapper around `children`, e.g. to let it fill a grid cell. */
+    class?: string;
     children: Snippet;
   } = $props();
 
@@ -50,7 +53,7 @@
 <!-- Focus events bubble up as focusin/out, so keyboard focus shows it too. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
-  class="inline-flex"
+  class={["inline-flex", className]}
   bind:this={anchor}
   onpointerenter={show}
   onpointerleave={hide}

@@ -8,16 +8,21 @@ import DisplayPreview from "./DisplayPreview.svelte";
 import FocusedWindowPreview from "./FocusedWindowPreview.svelte";
 import LevelMeter from "./LevelMeter.svelte";
 import { permissions } from "./permissions.svelte.ts";
-import { refreshSources, sources } from "./sources.svelte.ts";
+import { refreshSources, sourceStatus, sources } from "./sources.svelte.ts";
 import WindowPreview from "./WindowPreview.svelte";
 
 provideRecordingEnvironment({
   sources,
+  // Without the helper there's nothing more to wait for.
+  get ready() {
+    return sourceStatus.loaded && (permissions.status !== null || sourceStatus.error !== null);
+  },
   get preferences() {
     return desktop.preferences;
   },
   updatePreferences,
   blockedReason: (need) => permissions.blockedReason(need),
+  allow: (need) => void permissions.allow(need),
   refreshSources: () => void refreshSources(),
   pickAreas: (areas) => window.chord.desktop.pickAreas(areas),
   apps: {

@@ -1,12 +1,14 @@
 <script lang="ts">
   // Four cells shared by Home, the menu bar, the floating toolbar, and the recording island. The icon end of a cell switches it
   // on and off, keeping its settings; the rest opens its popup. While recording, the last source on can't be
-  // switched off.
+  // switched off. A source the system doesn't allow yet shows in yellow, reads as off, and asks for what it needs
+  // when clicked.
   import type { Snippet } from "svelte";
-  import { recordsAnything, type RecordingSetup } from "#ui/model/setup.ts";
+  import { recordsAnything, usableSetup, type RecordingSetup } from "#ui/model/setup.ts";
   import { recordingEnvironment, type SourceNeed } from "./environment.ts";
   import Icon, { type IconName } from "#ui/Icon.svelte";
   import Menu from "#ui/Menu.svelte";
+  import Tooltip from "#ui/Tooltip.svelte";
   import CameraItems from "./CameraItems.svelte";
   import MicrophoneItems from "./MicrophoneItems.svelte";
   import ScreenPanel from "./ScreenPanel.svelte";
@@ -56,7 +58,8 @@
   let compact = $derived(layout !== "home");
   let live = $derived(layout === "island");
   /** Whether switching this field off would leave a live recording with nothing to record. */
-  const isLast = (off: Partial<RecordingSetup>) => live && !recordsAnything({ ...setup, ...off });
+  const isLast = (off: Partial<RecordingSetup>) =>
+    live && !recordsAnything(usableSetup({ ...setup, ...off }, (need) => !blocked(need)));
   let frame = $derived(
     `flex w-full items-center gap-1 border text-left transition ${compact ? "h-10 rounded-lg p-1" : "h-16 rounded-xl p-2"}`,
   );
@@ -67,6 +70,10 @@
   const iconOn = "bg-primary text-white enabled:hover:bg-primary-hover";
   const iconOff =
     "bg-glass-900 text-glass-500 enabled:hover:bg-glass-800 enabled:hover:text-glass-300";
+  // A blocked cell frames like an off one; only its icon tile carries the warning.
+  const frameBlocked =
+    "border-glass-900 bg-transparent hover:border-glass-800 hover:bg-glass-900/60";
+  const iconBlocked = "bg-warning/10 text-warning group-hover:bg-warning/20";
   let iconBox = $derived(
     `flex shrink-0 items-center justify-center transition enabled:active:scale-95 ${compact ? "size-7 rounded-md" : "size-12 rounded-lg"}`,
   );
@@ -76,10 +83,42 @@
   <span class="flex min-w-0 flex-1 flex-col items-start justify-center gap-0.5 text-left">
     {#if !compact}<span class="text-xs text-glass-500">{title}</span>{/if}
     <span class={["flex w-full items-center gap-1.5 font-medium", compact ? "text-xs" : "text-sm"]}>
-      <span class={["flex-1 truncate", on ? "text-neutral-50" : "text-glass-500"]}>{state}</span>
+      {#if environment.ready}
+        <span class={["flex-1 truncate", on ? "text-neutral-50" : "text-glass-500"]}>{state}</span>
+      {:else}
+        <!-- Device names and permissions are still on their way. -->
+        <span class={["flex flex-1 items-center", compact ? "h-4" : "h-5"]}
+          ><span class={["skeleton w-16 rounded", compact ? "h-3" : "h-3.5"]}></span></span
+        >
+      {/if}
       {#if chevron}<Icon name="chevronDown" class="size-3.5 shrink-0 text-glass-500" />{/if}
     </span>
   </span>
+{/snippet}
+
+<!-- Waiting on a permission, the whole cell asks for it instead. -->
+{#snippet blockedCell(
+  kind: SourceNeed,
+  title: string,
+  icon: IconName,
+  state: string,
+  reason: string,
+)}
+  <Tooltip text={reason} placement={side} class="w-full">
+    <button
+      data-source-blocked={kind}
+      class={[frame, frameBlocked, "group"]}
+      aria-label={`${title}: ${reason}`}
+      onclick={() => environment.allow(kind)}
+    >
+      <span class={[iconBox, iconBlocked]}>
+        <SourceIcon name={icon} on={false} {compact} />
+      </span>
+      <span class={["flex min-w-0 flex-1 items-center", compact ? "px-1.5" : "px-2.5"]}>
+        {@render text(title, state, false, false)}
+      </span>
+    </button>
+  </Tooltip>
 {/snippet}
 
 <!-- The icon end is the switch; the rest opens the popup. -->
@@ -96,40 +135,38 @@
   need: SourceNeed,
 )}
   {@const reason = blocked(need)}
-  <div
-    class={[frame, open ? frameOpen : on ? frameOn : frameOff, reason && "opacity-40"]}
-    title={reason ?? undefined}
-  >
-    <button
-      data-source-toggle={kind}
-      class={[iconBox, "disabled:cursor-default", on ? iconOn : iconOff]}
-      onclick={power}
-      disabled={last || !!reason}
-      aria-pressed={on}
-      aria-label={`${title} ${on ? "on" : "off"}`}
-      title={reason
-        ? undefined
-        : last
+  {#if reason}
+    {@render blockedCell(kind, title, icon, "Off", reason)}
+  {:else}
+    <div class={[frame, open ? frameOpen : on ? frameOn : frameOff]}>
+      <button
+        data-source-toggle={kind}
+        class={[iconBox, "disabled:cursor-default", on ? iconOn : iconOff]}
+        onclick={power}
+        disabled={last}
+        aria-pressed={on}
+        aria-label={`${title} ${on ? "on" : "off"}`}
+        title={last
           ? "Something must stay on while recording"
           : on
             ? `Turn ${title.toLowerCase()} off`
             : `Turn ${title.toLowerCase()} on`}
-    >
-      <SourceIcon name={icon} {on} {compact} />
-    </button>
-    <button
-      data-popup-trigger
-      disabled={!!reason}
-      class={[
-        "flex h-full min-w-0 flex-1 items-center transition enabled:hover:bg-glass-900 disabled:cursor-default",
-        compact ? "rounded-md px-1.5" : "rounded-lg px-2.5",
-      ]}
-      aria-label={`${title} options: ${state}`}
-      onclick={toggle}
-    >
-      {@render text(title, state, on, true)}
-    </button>
-  </div>
+      >
+        <SourceIcon name={icon} {on} {compact} />
+      </button>
+      <button
+        data-popup-trigger
+        class={[
+          "flex h-full min-w-0 flex-1 items-center transition enabled:hover:bg-glass-900 disabled:cursor-default",
+          compact ? "rounded-md px-1.5" : "rounded-lg px-2.5",
+        ]}
+        aria-label={`${title} options: ${state}`}
+        onclick={toggle}
+      >
+        {@render text(title, state, on, true)}
+      </button>
+    </div>
+  {/if}
 {/snippet}
 
 <div
@@ -218,42 +255,50 @@
     </Menu>
 
     <!-- Nothing to choose, so no popup: the whole cell switches it. -->
-    <button
-      class={[
-        frame,
-        setup.systemAudio ? frameOn : frameOff,
-        "group enabled:hover:border-glass-800 enabled:hover:bg-glass-800/60 disabled:cursor-default",
-        audioReason && "opacity-40",
-      ]}
-      disabled={!!audioReason || (setup.systemAudio && isLast({ systemAudio: false }))}
-      title={audioReason ??
-        (setup.systemAudio && isLast({ systemAudio: false })
-          ? "Something must stay on while recording"
-          : undefined)}
-      aria-pressed={setup.systemAudio}
-      aria-label={`System audio ${setup.systemAudio ? "on" : "off"}`}
-      onclick={() => (setup.systemAudio = !setup.systemAudio)}
-    >
-      <span
+    {#if audioReason}
+      {@render blockedCell(
+        "systemAudio",
+        "System audio",
+        "speaker",
+        compact ? "System audio" : "Off",
+        audioReason,
+      )}
+    {:else}
+      <button
         class={[
-          iconBox,
-          setup.systemAudio
-            ? "bg-primary text-white group-enabled:group-hover:bg-primary-hover"
-            : "bg-glass-900 text-glass-500 group-enabled:group-hover:bg-glass-800 group-enabled:group-hover:text-glass-300",
+          frame,
+          setup.systemAudio ? frameOn : frameOff,
+          "group enabled:hover:border-glass-800 enabled:hover:bg-glass-800/60 disabled:cursor-default",
         ]}
+        disabled={setup.systemAudio && isLast({ systemAudio: false })}
+        title={setup.systemAudio && isLast({ systemAudio: false })
+          ? "Something must stay on while recording"
+          : undefined}
+        aria-pressed={setup.systemAudio}
+        aria-label={`System audio ${setup.systemAudio ? "on" : "off"}`}
+        onclick={() => (setup.systemAudio = !setup.systemAudio)}
       >
-        <SourceIcon name="speaker" on={setup.systemAudio} {compact} />
-      </span>
-      <span class={["flex min-w-0 flex-1 items-center", compact ? "px-1.5" : "px-2.5"]}>
-        <!-- Compact cells drop the title, and "On"/"Off" alone doesn't say what it is. -->
-        {@render text(
-          "System audio",
-          compact ? "System audio" : setup.systemAudio ? "On" : "Off",
-          setup.systemAudio,
-          false,
-        )}
-      </span>
-    </button>
+        <span
+          class={[
+            iconBox,
+            setup.systemAudio
+              ? "bg-primary text-white group-enabled:group-hover:bg-primary-hover"
+              : "bg-glass-900 text-glass-500 group-enabled:group-hover:bg-glass-800 group-enabled:group-hover:text-glass-300",
+          ]}
+        >
+          <SourceIcon name="speaker" on={setup.systemAudio} {compact} />
+        </span>
+        <span class={["flex min-w-0 flex-1 items-center", compact ? "px-1.5" : "px-2.5"]}>
+          <!-- Compact cells drop the title, and "On"/"Off" alone doesn't say what it is. -->
+          {@render text(
+            "System audio",
+            compact ? "System audio" : setup.systemAudio ? "On" : "Off",
+            setup.systemAudio,
+            false,
+          )}
+        </span>
+      </button>
+    {/if}
     {#if trailing}
       <div class="col-span-full flex @min-[53rem]:col-span-1">{@render trailing()}</div>
     {/if}

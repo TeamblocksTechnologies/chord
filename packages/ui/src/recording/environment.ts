@@ -11,8 +11,11 @@ import type {
   SourceList,
 } from "#ui/model/sources.ts";
 
-/** What each source needs from the system before it can be used. */
-export type SourceNeed = "screen" | "camera" | "microphone" | "systemAudio";
+import type { SourceNeed } from "#ui/model/setup.ts";
+
+export type { SourceNeed };
+/** Features that work without a permission, but work better with it. */
+export type FeatureNeed = "windowRoles";
 
 export interface AppEntry {
   bundleId: string;
@@ -66,10 +69,14 @@ export interface RecordingPreviews {
 export interface RecordingEnvironment {
   /** Displays, apps, windows and devices to choose from. */
   readonly sources: SourceList;
+  /** Whether the sources and what the system allows have been read, so the cells can show them. */
+  readonly ready: boolean;
   readonly preferences: RecordingPreferences;
   updatePreferences(patch: Partial<RecordingPreferences>): void;
-  /** Why a source can't be used yet, or null when it can. */
-  blockedReason(need: SourceNeed): string | null;
+  /** Why a source can't be used yet, or a feature works only in part, or null when nothing is missing. */
+  blockedReason(need: SourceNeed | FeatureNeed): string | null;
+  /** Asks the system for what `need` is missing: its prompt, or System Settings once it has been asked. */
+  allow(need: SourceNeed | FeatureNeed): void;
   /** Lists the sources again, e.g. while windows open and close. */
   refreshSources(): void;
   /** Lets the user draw areas over every display. Resolves null when cancelled; absent where it can't be shown. */
