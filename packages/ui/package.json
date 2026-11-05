@@ -17,7 +17,7 @@
   },
   "scripts": {
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "node --test src/**/*.test.ts"
+    "test": "node --test 'src/**/*.test.ts'"
   },
   "peerDependencies": {
     "svelte": "^5.57.2"
