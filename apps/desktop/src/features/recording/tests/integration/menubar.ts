@@ -1,7 +1,7 @@
 // Run after building: env -u ELECTRON_RUN_AS_NODE pnpm exec electron src/features/recording/tests/integration/menubar.ts
 import { app, BrowserWindow, screen } from "electron";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -21,10 +21,16 @@ writeFileSync(
 );
 // Allowed, so the cells' menus can open; previews only start inside them.
 const permissionsPath = join(data, "permissions.json");
-const setPermissions = (status: string) =>
+const setPermissions = (status: string, overrides: Record<string, string> = {}) =>
   writeFileSync(
     permissionsPath,
-    JSON.stringify({ screen: status, microphone: status, camera: status, accessibility: status }),
+    JSON.stringify({
+      screen: status,
+      microphone: status,
+      camera: status,
+      accessibility: status,
+      ...overrides,
+    }),
   );
 setPermissions("granted");
 const fixture = join(data, "helper.cjs");
@@ -230,6 +236,65 @@ app.whenReady().then(async () => {
           `['screen','camera','microphone'].every(kind => document.querySelector('[data-source-toggle="' + kind + '"]'))`,
         ),
       "the source cells",
+    );
+
+    // Camera allowed alone: the other sources turn yellow and ask for their permission when clicked, the
+    // microphone with its system prompt since it hasn't been asked yet.
+    setPermissions("denied", { camera: "granted", microphone: "notDetermined" });
+    await until(
+      () =>
+        evaluate(
+          panel,
+          `['screen','microphone','systemAudio'].every(kind => document.querySelector('[data-source-blocked="' + kind + '"]')) && !!document.querySelector('[data-source-toggle="camera"]')`,
+        ),
+      "blocked sources",
+    );
+    assert.equal(
+      await evaluate(panel, `document.querySelector('[aria-label="Record"]').disabled`),
+      true,
+      "Nothing allowed is on, so there's nothing to record",
+    );
+    await animationsDone(panel);
+    await screenshot(panel, "menubar-blocked");
+    assert.match(
+      await evaluate(
+        panel,
+        `document.querySelector('[data-source-blocked="screen"]').getAttribute('aria-label')`,
+      ),
+      /Needs screen recording access/,
+    );
+    await click(panel, `document.querySelector('[data-source-blocked="microphone"]')`);
+    await until(
+      () =>
+        readFileSync(helperLog, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .some((r) => r.method === "requestPermission" && r.params.permission === "microphone"),
+      "microphone permission request",
+    );
+    // Without accessibility the screen records in full; following a window marks what it's missing.
+    setPermissions("granted", { accessibility: "denied" });
+    await until(
+      () => evaluate(panel, `!document.querySelector('[data-source-blocked]')`),
+      "screen allowed without accessibility",
+    );
+    await openMenu(panel, "screen");
+    await until(
+      () => evaluate(panel, `!!document.querySelector('[data-feature-blocked="windowRoles"]')`),
+      "the accessibility mark",
+    );
+    await screenshot(panel, "menubar-accessibility");
+    await escape(panel);
+    await until(async () => !(await menuOpen(panel)), "screen menu closed");
+    setPermissions("granted");
+    await until(
+      () =>
+        evaluate(
+          panel,
+          `!document.querySelector('[data-source-blocked]') && !!document.querySelector('[data-source-toggle="screen"]')`,
+        ),
+      "sources allowed again",
     );
     const state = await evaluate(panel, "window.chord.desktop.getState()");
     assert.equal(state.menubar.visible, true);

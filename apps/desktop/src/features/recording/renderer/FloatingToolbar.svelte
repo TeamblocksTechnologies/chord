@@ -2,10 +2,10 @@
   // The quick-start toolbar. Its window keeps room for the cells' dropdowns on the side with more space; the bar sits
   // at the other edge, and drags by anything that isn't a control.
   import { TOOLBAR_HEIGHT, TOOLBAR_WIDTH } from "#platform/contracts/desktop";
-  import { recordsAnything } from "#project-document/domain/recording";
   import Icon from "@teamblocks.dev/chord-ui/Icon.svelte";
   import RecordButton from "@teamblocks.dev/chord-ui/recording/RecordButton.svelte";
   import RecordingControls from "@teamblocks.dev/chord-ui/recording/RecordingControls.svelte";
+  import { recordable } from "@teamblocks.dev/chord-ui/recording/controls";
   import { desktop } from "#platform/renderer/desktop.svelte";
   import { shortcutLabel } from "#features/settings/renderer/shortcuts.svelte";
   import { windowDrag } from "./windowDrag.ts";
@@ -47,7 +47,7 @@
       <RecordButton
         compact
         class="h-10! w-10 shrink-0"
-        disabled={!recordsAnything(desktop.defaults)}
+        disabled={!recordable(desktop.defaults)}
         onclick={() => window.chord.desktop.recording.quickStart()}
       />
     </div>

@@ -21,6 +21,7 @@ export {
   capturesScreen,
   initialSetup,
   recordsAnything,
+  usableSetup,
   type CaptureMode,
   type RecordingSetup,
 } from "@teamblocks.dev/chord-ui/model/setup";

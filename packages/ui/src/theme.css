@@ -2,6 +2,8 @@
   --font-sans: "DM Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --color-primary: var(--color-blue-600);
   --color-primary-hover: var(--color-blue-500);
+  /* Something needs the user's attention before it works, e.g. a permission to allow. */
+  --color-warning: var(--color-amber-400);
 
   /*
    * Translucent stand-ins for the neutral scale. Over the dark window tint each one reads as its

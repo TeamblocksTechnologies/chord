@@ -14,6 +14,8 @@ import {
 import {
   activeAreas,
   activeCameraIds,
+  recordsAnything,
+  usableSetup,
   type CaptureMode,
   type RecordingSetup,
 } from "#ui/model/setup.ts";
@@ -29,6 +31,12 @@ import {
 import { recordingEnvironment } from "./environment.ts";
 
 const sources = () => recordingEnvironment().sources;
+
+/** Whether starting would record anything, leaving out sources the system doesn't allow yet. */
+export function recordable(setup: RecordingSetup): boolean {
+  const environment = recordingEnvironment();
+  return recordsAnything(usableSetup(setup, (need) => !environment.blockedReason(need)));
+}
 
 export const modes: { mode: CaptureMode; icon: IconName; label: string; short: string }[] = [
   { mode: "window", icon: "window", label: "Focused window", short: "Windows" },

@@ -9,6 +9,7 @@
   import DrillRow from "./DrillRow.svelte";
   import ModeSwitch from "./ModeSwitch.svelte";
   import PinnedWindows from "./PinnedWindows.svelte";
+  import Icon from "#ui/Icon.svelte";
   import Toggle from "#ui/Toggle.svelte";
   import QualityRow from "./QualityRow.svelte";
   import ScreenItems from "./ScreenItems.svelte";
@@ -26,6 +27,8 @@
   let alwaysHidden = $derived(environment.preferences.hiddenApps);
   let apps = $derived(appSummary(setup, alwaysHidden));
   let hiddenApps = $derived(excludedApps(setup.hiddenApps, alwaysHidden));
+  /** Following a window works without accessibility, but only includes its dialogs and popups with it. */
+  let rolesReason = $derived(environment.blockedReason("windowRoles"));
 </script>
 
 {#if view !== "main"}
@@ -50,12 +53,26 @@
       {:else if setup.mode === "area"}
         <AreaItems {setup} />
       {:else if setup.recordsScreen}
-        <div class="px-2.5 pb-2">
+        <div class="relative px-2.5 pb-2">
           <FocusedWindowPreview
             allowedApps={setup.allowedApps}
             {hiddenApps}
             pinnedWindowIds={setup.pinnedWindowIds}
           />
+          {#if rolesReason}
+            <div class="absolute inset-x-4 top-1.5">
+              <button
+                data-feature-blocked="windowRoles"
+                class="flex w-full items-center gap-2 rounded-md border border-warning/30 bg-neutral-900/90 px-2.5 py-1.5 text-left text-xs font-medium text-warning shadow-lg backdrop-blur transition hover:border-warning/50 hover:bg-neutral-800/90"
+                onclick={() => environment.allow("windowRoles")}
+              >
+                <Icon name="alert" class="size-3.5 shrink-0" />
+                <span
+                  >Windows mode needs accessibility access for full functionality, click to allow</span
+                >
+              </button>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>

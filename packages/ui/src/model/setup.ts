@@ -97,6 +97,26 @@ export function capturesScreen(setup: RecordingSetup): boolean {
   return setup.recordsScreen && (setup.mode !== "area" || activeAreas(setup).length > 0);
 }
 
+/** The sources a setup can switch on, each needing something from the system before it can be used. */
+export type SourceNeed = "screen" | "camera" | "microphone" | "systemAudio";
+
+/**
+ * The setup as it can be recorded now: sources the system doesn't allow yet are switched off, keeping their settings
+ * so they come back once allowed.
+ */
+export function usableSetup(
+  setup: RecordingSetup,
+  usable: (need: SourceNeed) => boolean,
+): RecordingSetup {
+  return {
+    ...setup,
+    recordsScreen: setup.recordsScreen && usable("screen"),
+    cameraEnabled: setup.cameraEnabled && usable("camera"),
+    microphoneEnabled: setup.microphoneEnabled && usable("microphone"),
+    systemAudio: setup.systemAudio && usable("systemAudio"),
+  };
+}
+
 export function recordsAnything(setup: RecordingSetup): boolean {
   return (
     capturesScreen(setup) ||

@@ -1,13 +1,18 @@
 import type { PermissionKind, Permissions } from "@teamblocks.dev/chord-recorder-protocol";
+import type { FeatureNeed, SourceNeed } from "@teamblocks.dev/chord-ui/recording/environment";
 import { helper, onHelper } from "#platform/renderer/helper";
 
-/** What each source needs. Screen recording also needs accessibility, which is how it tracks and follows windows. */
+/**
+ * What each source needs, and what features need to work in full. Accessibility tells following a window which new
+ * windows are its dialogs, sheets, and panels; without it, only noticeably smaller ones count.
+ */
 export const requirements = {
-  screen: ["screen", "accessibility"],
+  screen: ["screen"],
   camera: ["camera"],
   microphone: ["microphone"],
   systemAudio: ["screen"],
-} as const satisfies Record<string, readonly PermissionKind[]>;
+  windowRoles: ["accessibility"],
+} as const satisfies Record<SourceNeed | FeatureNeed, readonly PermissionKind[]>;
 
 export type Requirement = keyof typeof requirements;
 
@@ -53,11 +58,19 @@ class PermissionStore {
     return requirements[need].filter((kind) => !this.granted(kind));
   }
 
-  /** Why `need` is unavailable, or null when it's usable. */
+  /** Why `need` is unavailable, and what clicking it does, or null when it's usable. */
   blockedReason(need: Requirement): string | null {
     if (!this.status) return null;
-    const names = this.missing(need).map((kind) => permissionLabels[kind].toLowerCase());
-    return names.length > 0 ? `Allow ${names.join(" and ")} to use this` : null;
+    const missing = this.missing(need);
+    if (missing.length === 0) return null;
+    const names = missing.map((kind) => permissionLabels[kind].toLowerCase()).join(" and ");
+    return `Needs ${names} access, click to allow`;
+  }
+
+  /** Asks for the first permission `need` is missing. */
+  async allow(need: Requirement): Promise<void> {
+    const [kind] = this.missing(need);
+    if (kind) await this.enable(kind);
   }
 
   /** Whether `enable` would show a system prompt rather than open System Settings. */
@@ -73,10 +86,15 @@ class PermissionStore {
    * as denied until granted; accessibility's prompt is shown only if it isn't granted, and points to Settings itself.
    */
   async enable(kind: PermissionKind): Promise<void> {
-    if (!this.canPrompt(kind)) return void (await window.chord.openPermissionSettings(kind));
+    if (!this.canPrompt(kind)) return this.openSettings(kind);
     if (kind === "screen") this.#promptedScreen = true;
     if (kind === "accessibility") this.#promptedAccessibility = true;
     this.status = await helper.request("requestPermission", { permission: kind });
+  }
+
+  /** Opens the System Settings pane for `kind`. */
+  async openSettings(kind: PermissionKind): Promise<void> {
+    await window.chord.openPermissionSettings(kind);
   }
 }
 

@@ -2,11 +2,11 @@
   import { afterExit } from "@teamblocks.dev/chord-ui/dialog";
   // Sets up and starts a new recording for a project.
   import { onMount } from "svelte";
-  import { recordsAnything, recorder } from "./recorder.svelte.ts";
+  import { recorder } from "./recorder.svelte.ts";
   import type { Project } from "#project-document/domain/recording";
-  import PermissionsPanel from "./PermissionsPanel.svelte";
   import RecordButton from "@teamblocks.dev/chord-ui/recording/RecordButton.svelte";
   import RecordingControls from "@teamblocks.dev/chord-ui/recording/RecordingControls.svelte";
+  import { recordable } from "@teamblocks.dev/chord-ui/recording/controls";
 
   let { project, onclose }: { project: Project; onclose: () => void } = $props();
 
@@ -25,7 +25,6 @@
   <h2 id="recording-setup-title" class="mb-4 text-sm font-medium text-neutral-100">
     New recording
   </h2>
-  <PermissionsPanel />
   <RecordingControls setup={project.setup} overlay={false} fill />
   <div class="mt-5 flex items-center justify-end gap-2">
     <button
@@ -36,7 +35,7 @@
       compact
       label="Start recording"
       class="w-40"
-      disabled={!recordsAnything(project.setup)}
+      disabled={!recordable(project.setup)}
       onclick={() => {
         recorder.start(project.setup, project);
         dialog.close();

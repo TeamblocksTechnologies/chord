@@ -20,6 +20,7 @@ import {
   isRecordingSetup,
   upgradeQuality,
   upgradeScreenAppearance,
+  usableSetup,
   type RecordingSetup,
 } from "#project-document/domain/recording";
 import type { SessionInfo } from "@teamblocks.dev/chord-recorder-protocol";
@@ -503,8 +504,31 @@ export function handleToolbar(
     if (rect) placeToolbar(rect);
   });
 
+  /**
+   * The setup without the sources the system doesn't allow yet, so a camera-only user can record with the screen
+   * left on. Unchanged if the helper can't say.
+   */
+  const usable = async (setup: RecordingSetup): Promise<RecordingSetup> => {
+    if (!isRecordingSetup(setup)) return setup;
+    const permissions = await helper.request("getPermissions").catch(() => null);
+    if (!permissions) return setup;
+    const needs = {
+      screen: "screen",
+      camera: "camera",
+      microphone: "microphone",
+      systemAudio: "screen",
+    } as const;
+    return usableSetup(setup, (need) => permissions[needs[need]] === "granted");
+  };
+
   // Every entry point hands control to the island, including during the countdown.
-  const start = (setup: RecordingSetup, projectId?: string, notes?: unknown, folder?: unknown) => {
+  const start = async (
+    requested: RecordingSetup,
+    projectId?: string,
+    notes?: unknown,
+    folder?: unknown,
+  ) => {
+    const setup = await usable(requested);
     const options = {
       projectId,
       notes: isNotePages(notes) ? notes : [],
@@ -523,7 +547,7 @@ export function handleToolbar(
       start(setup, projectId, notes, folder),
   );
   ipcMain.handle("recording:quick-start", () => {
-    if (defaults) start(defaults);
+    if (defaults) void start(defaults);
   });
   ipcMain.handle("recording:pause", () => recording.pause());
   ipcMain.handle("recording:resume", () => recording.resume());
