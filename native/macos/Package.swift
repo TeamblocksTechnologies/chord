@@ -8,7 +8,7 @@ let package = Package(
     dependencies: [
         // Runs Parakeet. Without its default trait, which links a text normalizer only its speech synthesis uses.
         .package(
-            url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.2", traits: [])
+            url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.3", traits: [])
     ],
     targets: [
         .target(name: "RecorderCore"),
